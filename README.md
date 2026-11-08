@@ -4,6 +4,7 @@ BranchSuite is the staffing branch's whiteboard, rebuilt to run entirely inside 
 
 - **Job order board** (the main screen). Each order is a card with one line per opening. Recruiters write their initials on a line (pencil, committed, started), and managers create, pause, close and publish orders.
 - **Wall mode.** A lobby TV paired to a branch shows a public-safe version of the board: client codes and glyphs instead of names, no pay, and symbols instead of initials. It pages automatically and recovers by itself after a power cut.
+- **Morning whiteboard (huddle).** At `/whiteboard`, managers prepare each day's huddle board: talking points, assignments (which can become Inbox tasks), priority orders, notes, metrics and pasted screenshots. Members see it read-only and tick off their own assignments. During the branch's scheduled huddle window the board takes over the lobby displays with full detail, then they switch back automatically. See [docs/WHITEBOARD.md](docs/WHITEBOARD.md).
 - **Mail intake.** Branch shared mailboxes, plus personal mailboxes users opt into, are read through Microsoft Graph. Azure OpenAI triages each message into a task in the **Inbox**. A request with an exact headcount and a clear account becomes a **draft order** for a manager to review.
 - **Candidate pipeline.** A kanban from Sourced to Started. A candidate can pencil onto an opening on the board. This feature sits behind the `pipeline` flag.
 
@@ -29,7 +30,8 @@ npm run dev          # API on :7071 (in-memory fictional seed, dev auth, mock AI
    localStorage.setItem('bs.wall.token', 'dev-wall-token-riverside-do-not-use-in-azure')
    ```
    Or pair the display for real: the TV shows a code, which you enter in **Setup → Displays → Pair a display**.
-3. To feed sample mail through the intake pipeline, run `npx tsx apps/api/src/mail/dev-ingest.ts`. See [docs/MAIL.md](docs/MAIL.md) for how to see the results in the running app.
+3. Open http://localhost:5173/whiteboard as Morgan to edit today's seeded huddle board. Outside the seeded window (07:30–08:15 Chicago time), the wall shows the job board. To see the takeover at any hour, start the API with `DEV_WHITEBOARD_LIVE=on` (for example `DEV_WHITEBOARD_LIVE=on npm run dev`). This dev-only switch is refused unless `AUTH_MODE=dev` and outside Azure.
+4. To feed sample mail through the intake pipeline, run `npx tsx apps/api/src/mail/dev-ingest.ts`. See [docs/MAIL.md](docs/MAIL.md) for how to see the results in the running app.
 
 API calls need a dev user. In dev mode, `curl -H 'x-dev-user: morgan@branchsuite.example.com' http://localhost:7071/api/me` works. The API accepts `x-dev-user` only when `AUTH_MODE=dev`, and it refuses to start in that mode on Azure.
 
@@ -38,16 +40,17 @@ All seed data is fictional. Keep it that way: never copy client names, mailboxes
 ## Repository layout
 
 ```
-packages/shared/   @branchsuite/shared: zod schemas, API contract, pure domain rules (orders, wall feed, permissions, pipeline, tasks)
+packages/shared/   @branchsuite/shared: zod schemas, API contract, pure domain rules (orders, wall feed, permissions, pipeline, tasks, whiteboard)
 apps/api/          Azure Functions app with a framework-free router; src/dev/server.ts runs the same router on node:http
   src/routes/      one module per resource
   src/mail/        Graph client, delta sync, prefilter, sanitizer, classifier, ingest
+  src/media/       whiteboard image store: BlobMediaStore (Azure) and MemoryMediaStore (dev and tests)
   src/data/        Repo interface: CosmosRepo (Azure) and MemoryRepo (dev and tests)
 apps/web/          React 19 + Vite + Tailwind 4 SPA
   src/app/         shell, router (each feature is a lazily loaded chunk), auth, theme
   src/lib/         API client, TanStack Query hooks, realtime
   src/ui/          shared primitives
-  src/features/    board, wall, inbox, pipeline, setup
+  src/features/    board, wall, whiteboard, inbox, pipeline, setup
 infra/             Bicep (main.bicep + modules), setup scripts (Entra app, Exchange RBAC)
 .github/workflows/ ci.yml, deploy.yml
 docs/              architecture, deployment, security, mail and wall guides
@@ -80,3 +83,4 @@ The built SPA works under a strict CSP (`script-src 'self'; style-src 'self'`). 
 - [docs/SECURITY.md](docs/SECURITY.md): threat model and controls
 - [docs/MAIL.md](docs/MAIL.md): how mail intake works, how to set up mailboxes, troubleshooting
 - [docs/WALL.md](docs/WALL.md): wall settings, pairing and revoking displays, kiosk hardware, troubleshooting
+- [docs/WHITEBOARD.md](docs/WHITEBOARD.md): the morning huddle board, its display window and the wall takeover

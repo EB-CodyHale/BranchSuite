@@ -606,7 +606,7 @@ export type DisplayClaimInput = z.infer<typeof zDisplayClaimInput>;
 export const zAuditEvent = z.object({
   id: zId,
   branchId: zId,
-  entity: z.enum(['order', 'candidate', 'account', 'task', 'branch', 'user', 'display', 'mailbox']),
+  entity: z.enum(['order', 'candidate', 'account', 'task', 'branch', 'user', 'display', 'mailbox', 'whiteboard', 'media']),
   entityId: zId,
   action: z.string().max(60),
   actorId: zId.nullable(),

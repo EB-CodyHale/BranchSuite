@@ -69,7 +69,7 @@ function changed(ctx: AppContext, caller: Caller, wb: Whiteboard, action: string
   // Realtime: staff boards and every wall display of the branch refetch (displays re-evaluate mode).
   notify(ctx, wb.branchId, ['whiteboard'], { wall: true });
   // AuditEvent has no 'whiteboard' entity; board events are recorded on the branch with the board id.
-  return audit(ctx, caller.user.id, { branchId: wb.branchId, entity: 'branch', entityId: wb.id, action: `whiteboard.${action}`, summary });
+  return audit(ctx, caller.user.id, { branchId: wb.branchId, entity: 'whiteboard', entityId: wb.id, action: `whiteboard.${action}`, summary });
 }
 
 function newBoard(branch: Branch, date: string, actorId: string, nowIso: string): Whiteboard {
@@ -387,7 +387,7 @@ export function registerWhiteboardRoutes(router: Router): void {
       // Bytes first: metadata never points at an object that does not exist.
       await ctx.media.put(branch.id, media.id, raw, media.contentType);
       await ctx.repo.createMedia(media);
-      await audit(ctx, caller.user.id, { branchId: branch.id, entity: 'branch', entityId: media.id, action: 'media.upload', summary: `Uploaded whiteboard image ${media.fileName}` });
+      await audit(ctx, caller.user.id, { branchId: branch.id, entity: 'media', entityId: media.id, action: 'media.upload', summary: `Uploaded whiteboard image ${media.fileName}` });
       return created(media);
     }),
   );

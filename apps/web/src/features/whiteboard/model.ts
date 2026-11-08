@@ -7,6 +7,7 @@
  */
 import {
   DEFAULT_HUDDLE_WINDOW,
+  isWhiteboardLive,
   newId,
   todayKey,
   WHITEBOARD_LIMITS,
@@ -185,25 +186,27 @@ function localClock(timeZone: string, now: Date): string {
 export type HuddleState = 'live' | 'scheduled' | 'off';
 
 /**
- * What the status pill says. Mirrors the server rule (isWhiteboardLive): 'on' is live only on its own
- * date; 'auto' is live inside the window on its date; 'off' never. A day that has not started, or
- * whose window is still ahead, is 'scheduled'. A finished window on a past day reads 'off'.
+ * What the status pill says. 'live' is exactly the server rule (shared isWhiteboardLive). Otherwise a
+ * day that has not started, or whose window is still ahead, is 'scheduled'; anything else is 'off'.
  */
 export function huddleState(wb: Pick<Whiteboard, 'date' | 'window' | 'live'> | null, timeZone: string, now: Date): HuddleState {
   if (!wb) return 'scheduled';
+  const zone = validTimeZone(timeZone);
+  if (isWhiteboardLive(wb, zone, now)) return 'live';
   if (wb.live === 'off') return 'off';
-  let today: string;
+  const today = todayKey(zone, now);
+  if (wb.date !== today) return wb.date > today ? 'scheduled' : 'off';
+  return wb.live === 'auto' && localClock(zone, now) < wb.window.start ? 'scheduled' : 'off';
+}
+
+/** The branch time zone, or UTC when the browser does not know it (the pill must never throw). */
+function validTimeZone(timeZone: string): string {
   try {
-    today = todayKey(timeZone, now);
+    new Intl.DateTimeFormat('en-GB', { timeZone });
+    return timeZone;
   } catch {
-    today = todayKey('UTC', now);
+    return 'UTC';
   }
-  if (wb.date < today) return 'off';
-  if (wb.date > today) return 'scheduled';
-  if (wb.live === 'on') return 'live';
-  const clock = localClock(timeZone, now);
-  if (clock >= wb.window.start && clock < wb.window.end) return 'live';
-  return clock < wb.window.start ? 'scheduled' : 'off';
 }
 
 export const HUDDLE_STATE_LABEL: Record<HuddleState, string> = {

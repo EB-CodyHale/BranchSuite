@@ -5,7 +5,7 @@ Employbridge Azure tenant.
 
 | Priority | Feature |
 | --- | --- |
-| 1 | **Job order board**, the primary screen, with a public-safe **wall mode** for lobby displays. |
+| 1 | **Job order board**, the primary screen, with a public-safe **wall mode** for lobby displays. The **morning whiteboard** (huddle board) takes over the displays during each branch's scheduled huddle window. |
 | 2 | **Mail intake**: branch shared mailboxes and opt-in personal mailboxes become actionable tasks, and a staffing request becomes a draft order. |
 | 3 | **Candidate pipeline**: candidates are tentatively placed on order openings and tracked by stage. This is a stretch feature, built behind the `pipeline` feature flag. |
 
@@ -28,14 +28,16 @@ Employbridge Azure tenant.
         ├─ Azure Web PubSub (disableLocalAuth)                         "invalidate" push to boards/walls
         ├─ Microsoft Graph (Mail.Read via Exchange RBAC for Applications, scoped to a mail-enabled group)
         ├─ Key Vault                                                   HMAC secret for wall keys / pairing
+        ├─ Storage (stmedia<token>, private container whiteboard-media) whiteboard screenshots; no keys, no SAS, 90-day lifecycle
         └─ Application Insights + Log Analytics
- Optional: VNet + private endpoints for Cosmos, OpenAI, Key Vault, Storage, Web PubSub (param enablePrivateNetworking).
+ Optional: VNet + private endpoints for Cosmos, OpenAI, Key Vault, Storage (host + media), Web PubSub (param enablePrivateNetworking).
 ```
 
 Tenant containment:
 
 - All data stays in the subscription's resources.
 - Every data-plane call uses Entra ID with managed identity. Local and key auth is disabled on Cosmos DB, OpenAI, Web PubSub and Storage.
+- Whiteboard images live in a separate media storage account. The Function App identity has Storage Blob Data Contributor on the `whiteboard-media` container only. Browsers never get a blob URL: every image is streamed through the API (`MEDIA_BLOB_ENDPOINT`, `MEDIA_CONTAINER`).
 - Static Web Apps sign-in uses a custom single-tenant Entra provider, with "assignment required" on the enterprise app.
 - The API also requires an active roster record (`users` in Cosmos DB). A tenant user with no roster record gets 403 `not_provisioned`.
 
@@ -47,7 +49,8 @@ apps/api/          Azure Functions app (TypeScript, esbuild bundle) + framework-
   src/http/        router, request/response helpers, error mapping
   src/auth/        SWA principal parsing, dev auth, display-token auth
   src/data/        Repository interfaces + CosmosRepo + MemoryRepo (dev/tests, optional JSON persistence)
-  src/routes/      one module per resource (orders, accounts, candidates, tasks, wall, displays, users, branches, mailboxes, me, realtime)
+  src/routes/      one module per resource (orders, accounts, candidates, tasks, wall, displays, users, branches, mailboxes, me, realtime, whiteboards)
+  src/media/       MediaStore: BlobMediaStore (managed identity), MemoryMediaStore (dev/tests), Unconfigured (refuses uploads)
   src/realtime/    Web PubSub publisher (+ no-op)
   src/mail/        Graph client, delta sync, sanitizer, prefilter, classifier (Azure OpenAI), ingest pipeline
   src/functions/   Azure Functions registrations (thin adapters)
@@ -58,11 +61,12 @@ apps/web/          React 19 + Vite + TypeScript + Tailwind 4 SPA
   src/ui/          shared primitives (Button, Dialog, Popover, Menu, Chip, Field, Toast, EmptyState, MarkerDot, WallGlyph)
   src/features/board/     job order board (primary)
   src/features/wall/      wall display (/wall) + pairing + staff preview + legend
+  src/features/whiteboard/ morning whiteboard (/whiteboard): editor, member view, presenter, WhiteboardSlide
   src/features/pipeline/  candidate pipeline
   src/features/inbox/     mail tasks (branch / personal / combined)
   src/features/setup/     branches, people, accounts, mailboxes, displays, wall settings, import
 infra/             Bicep (main.bicep + modules), azure.yaml (azd), scripts (Entra app, Exchange RBAC), GitHub Actions
-docs/              ARCHITECTURE.md (this), DEPLOYMENT.md, SECURITY.md, MAIL.md, WALL.md
+docs/              ARCHITECTURE.md (this), DEPLOYMENT.md, SECURITY.md, MAIL.md, WALL.md, WHITEBOARD.md
 ```
 
 ## 3. Data (Cosmos DB, database `branchsuite`)
@@ -70,7 +74,7 @@ docs/              ARCHITECTURE.md (this), DEPLOYMENT.md, SECURITY.md, MAIL.md, 
 | Container | Partition key | Documents (`type` field) |
 | --- | --- | --- |
 | `directory` | `/pk` | `branch` (pk `branch`), `user` (pk `user`), `display` (pk `display`), `mailbox` (pk `mailbox`), `pairing` (pk `pairing`, TTL 600 s), `lock` (pk `lock`) |
-| `board` | `/scopeId` | `account`, `order`, `candidate`, `task`, `event` (audit, TTL about 400 days). `scopeId` is the branch id, or `personal:<userId>` for private tasks. |
+| `board` | `/scopeId` | `account`, `order`, `candidate`, `task`, `event` (audit, TTL about 400 days), `whiteboard` (id `wb_<branchId>_<date>`, one per branch-local day), `media` (image metadata: type, size, sha256; TTL 90 days, bytes in Blob Storage). `scopeId` is the branch id, or `personal:<userId>` for private tasks. |
 | `mail` | `/scopeId` | `message` (EmailMessage), `filtered` (TTL 30 days), `receipt` (idempotency, TTL 120 days), `thread` (conversationId → taskId), `mailboxState` (pk `mailbox:<id>`: delta links) |
 
 How the data layout works:
@@ -88,7 +92,8 @@ How the data layout works:
   - Line writes are therefore safe when two recruiters write on the same order at once.
 - **Server stamps time.** Server code sets every `createdAt` / `updatedAt` / `*By` field. Client-supplied values are ignored.
 - **Archival over deletion.** Accounts, users, branches and candidates are archived. Closed orders keep their history.
-- **Audit.** Order, candidate, account and user mutations write an `event` document with a short summary.
+- **Audit.** Order, candidate, account, user, whiteboard and media mutations write an `event` document with a short summary.
+- **Whiteboard media.** Uploads are raw `image/*` bodies (PNG, JPEG, WebP; 8 MB cap). The server checks the magic bytes against the declared type, dedupes by sha256, and stores bytes at `<branchId>/<mediaId>` in the private container. The blob lifecycle rule and the metadata TTL both expire images after 90 days.
 
 Repository API (`apps/api/src/data/repo.ts`) exposes intent-level methods, not generic CRUD. Two implementations exist:
 
@@ -132,13 +137,19 @@ Further rules:
   - `/wall` is a deep link that starts on its own after a power cycle.
   - It shows a "Reconnecting…" banner on network loss and falls back to polling every 60 seconds.
   - It has no navigation out and offers no staff controls.
-- **Staff preview.** In the app, Board → Wall preview shows exactly the feed the TV gets, with a legend toggle.
+- **Staff preview.** In the app, Board → Wall preview shows exactly the feed the TV gets, with a legend toggle. A Board / Whiteboard toggle (`?mode=whiteboard`, staff only) previews today's huddle board even outside its window.
+- **Whiteboard takeover.** While today's whiteboard is live, `/api/wall/feed` returns `mode: 'whiteboard'` with the resolved `WhiteboardView`. Live means `isWhiteboardLive`: `'auto'` inside the branch-local window (start inclusive, end exclusive), `'on'` all day, `'off'` never. The view shows full detail, as the owner approved for the huddle. Outside the window the feed returns `mode: 'board'`, and the TV cross-fades back.
+  - **Invariant:** outside the live window a display gets *no* whiteboard content at all. The feed omits `whiteboard`, and `GET /api/wall/media/:id` returns 404 (`Cache-Control: no-store`) unless today's board for the display's branch is live and references that image. Every non-live case gets the same 404. The feed ignores `?mode`.
+  - `nextModeChangeAt` names the next scheduled switch (window start or end), and the display refetches then, with 0.5–2.5 s of jitter. Manual Start now and End changes arrive over realtime.
+  - Images reach the TV only through `/api/wall/media/<id>`, fetched with `x-display-token` and shown through object URLs. The staff preview and editor use `/api/branches/:b/media/<id>`.
+  - Dev only: `DEV_WHITEBOARD_LIVE=on` makes today's board live all day (refused unless `AUTH_MODE=dev` and outside Azure).
 
 ## 6. Realtime
 
 - Clients receive `RealtimeMessage {type:'invalidate', scopeId, entities}` and refetch with TanStack Query invalidation. The messages carry no business data.
 - Staff tokens join the groups `scope:<branchId>` for readable branches and `scope:personal:<userId>`.
 - Display tokens join only `wall:<branchId>`.
+- Whiteboard changes publish entity `whiteboard` to both `scope:<b>` and `wall:<b>`. Staff clients refresh that branch's whiteboards and wall preview, and displays refetch the gated feed. Nothing is pushed at window start or end; displays use `nextModeChangeAt` for that.
 - Groups are set at token issue time. Clients get no join/leave role, so they cannot subscribe to other groups.
 - If Web PubSub is not configured, negotiate returns `{url:null}`. Clients then poll: 30 s for staff and 60 s for the wall.
 

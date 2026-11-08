@@ -85,7 +85,7 @@ describe('whiteboard staff routes', () => {
     const patch = await app.call('PUT', board(TOMORROW), { as: 'usr_morgan', body: { window: { start: '07:00', end: '07:45' } } });
     expect(patch.body.whiteboard).toMatchObject({ title: 'Tuesday huddle', window: { start: '07:00', end: '07:45' }, blocks: [{ id: 'b1' }] });
     expect(app.publisher.sent.some((s) => s.groups.includes(`scope:${B1}`) && s.groups.includes(`wall:${B1}`) && s.message.entities.includes('whiteboard'))).toBe(true);
-    const events = await app.repo.listEvents(B1, 'branch', `wb_${B1}_${TOMORROW}`);
+    const events = await app.repo.listEvents(B1, 'whiteboard', `wb_${B1}_${TOMORROW}`);
     expect(events.map((e) => e.action).sort()).toEqual(['whiteboard.create', 'whiteboard.update']);
   });
 
