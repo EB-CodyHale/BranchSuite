@@ -103,3 +103,17 @@ the huddle is live.
   - `media.tsx`: images are fetched as Blobs through a `MediaLoader` and shown via object URLs (revoked on change).
   - `model.ts`: pure helpers (draft → PUT body, limits, image validation, window and live state, note bullets).
 - Query hooks: `useWhiteboards`, `useWhiteboard`, `useSaveWhiteboard`, `useSetWhiteboardLive`, `useCopyWhiteboard`, `useAssignmentDone`, `useAssignmentTask`, `useUploadMedia` (raw `File` body, `Content-Type`, `x-file-name`) in `apps/web/src/lib/queries.ts`. Realtime entity `whiteboard` invalidates `['whiteboard', branchId]` and the branch's wall preview.
+
+## Office screens: whiteboard all day
+
+Each paired display has a **What this screen shows** setting (Setup → Displays):
+
+| Setting | What the screen shows |
+| --- | --- |
+| **Automatic** (default) | The coded order board, switching to the whiteboard during the huddle window. Right for lobby screens. |
+| **Whiteboard all day** | Today's whiteboard with full detail all day, and the coded order board when there is no board for today. Use it for a manager's office TV. |
+| **Order board only** | The coded order board. It never switches to the whiteboard. |
+
+The setting applies to one screen only. **Start now** and **End** still control the Automatic screens. A "Whiteboard all day" screen keeps showing the board even when the huddle is set to off for the day.
+
+The server enforces this setting per display, for both the feed and the images. A lobby screen set to Automatic never receives whiteboard content outside the window, whatever an office screen is set to. Use **Whiteboard all day** only for screens the public can't see.

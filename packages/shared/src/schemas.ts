@@ -585,6 +585,7 @@ export type MailboxCreateInput = z.infer<typeof zMailboxCreateInput>;
 export type MailboxUpdateInput = z.infer<typeof zMailboxUpdateInput>;
 
 // ---------- wall displays ----------
+export const DISPLAY_CONTENT = ['auto', 'whiteboard', 'board'] as const;
 export const zDisplay = zAudited.extend({
   id: zId,
   branchId: zId,
@@ -593,14 +594,26 @@ export const zDisplay = zAudited.extend({
   tokenPrefix: z.string().max(12),
   lastSeenAt: zIso.nullable(),
   revokedAt: zIso.nullable(),
+  /**
+   * What this screen shows.
+   * auto       = coded order board, switching to the whiteboard during the huddle window (lobby default).
+   * whiteboard = today's whiteboard all day (e.g. a manager's office TV); coded board when there is none.
+   * board      = coded order board only; never the whiteboard.
+   * Records created before this field existed are treated as 'auto'.
+   */
+  content: z.enum(DISPLAY_CONTENT).default('auto'),
 });
 export type Display = z.infer<typeof zDisplay>;
+export type DisplayContent = (typeof DISPLAY_CONTENT)[number];
 export const zDisplayClaimInput = z.object({
   /** Pairing code shown on the TV, e.g. "K7Q-29M" (dash optional, case-insensitive). */
   code: z.string().trim().toUpperCase().regex(/^[A-Z0-9]{3}-?[A-Z0-9]{3}$/),
   name: zDisplay.shape.name,
+  content: z.enum(DISPLAY_CONTENT).optional(),
 });
 export type DisplayClaimInput = z.infer<typeof zDisplayClaimInput>;
+export const zDisplayUpdateInput = z.object({ name: zDisplay.shape.name, content: z.enum(DISPLAY_CONTENT) }).partial();
+export type DisplayUpdateInput = z.infer<typeof zDisplayUpdateInput>;
 
 // ---------- audit ----------
 export const zAuditEvent = z.object({

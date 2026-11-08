@@ -10,6 +10,7 @@ import {
   type Branch,
   type Media,
   type Whiteboard,
+  type DisplayContent,
   type WhiteboardView,
 } from '@branchsuite/shared';
 import type { AppContext } from '../context.js';
@@ -24,6 +25,25 @@ export function isBoardLive(ctx: AppContext, branch: Branch, wb: Whiteboard | nu
   if (!wb || wb.branchId !== branch.id) return false;
   if (isWhiteboardLive(wb, branch.timeZone, now)) return true;
   return ctx.config.devWhiteboardLive && wb.live !== 'off' && wb.date === todayKey(branch.timeZone, now);
+}
+
+/**
+ * Does this screen show today's whiteboard right now? The single rule behind both the wall feed and wall
+ * media, so a display can never fetch an image it would not be shown.
+ * - 'board': never. 'whiteboard': whenever today's board exists (office TVs). 'auto': only while live.
+ * Display records created before `content` existed count as 'auto'.
+ */
+export function showsWhiteboard(
+  ctx: AppContext,
+  branch: Branch,
+  wb: Whiteboard | null,
+  content: DisplayContent | undefined,
+  now: Date = ctx.now(),
+): wb is Whiteboard {
+  const mode = content ?? 'auto';
+  if (mode === 'board' || !wb || wb.branchId !== branch.id) return false;
+  if (mode === 'whiteboard') return wb.date === todayKey(branch.timeZone, now);
+  return isBoardLive(ctx, branch, wb, now);
 }
 
 /** Today's (branch-local) board, or null. */

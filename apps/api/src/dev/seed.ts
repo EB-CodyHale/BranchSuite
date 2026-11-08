@@ -523,7 +523,7 @@ export async function seedDevData(repo: DocumentRepo, now: Date = new Date(), me
 
   // ----- one paired lobby display (dev token printed by the dev server) -----
   await repo.createDisplay(
-    { id: 'dsp_riverside_lobby', branchId: B1, name: 'Riverside lobby TV', tokenPrefix: DEV_DISPLAY_TOKEN.slice(0, 6), lastSeenAt: null, revokedAt: null, ...audited('usr_morgan', isoDaysAgo(20)) },
+    { id: 'dsp_riverside_lobby', branchId: B1, name: 'Riverside lobby TV', tokenPrefix: DEV_DISPLAY_TOKEN.slice(0, 6), lastSeenAt: null, revokedAt: null, content: 'auto', ...audited('usr_morgan', isoDaysAgo(20)) },
     sha256Hex(DEV_DISPLAY_TOKEN),
   );
 }

@@ -392,6 +392,72 @@ describe('WALL MEDIA INVARIANT', () => {
   });
 });
 
+describe('per-display content (office TVs)', () => {
+  const lobby = `/branches/${B1}/displays/dsp_riverside_lobby`;
+  const media = (app: TestApp) => app.call('GET', `/wall/media/${SEED_MEDIA_ID}`, { headers: display });
+  const feed = async (app: TestApp) => (await app.call('GET', '/wall/feed', { headers: display })).body;
+
+  it("'whiteboard' shows today's board all day, with its images, and never schedules a switch", async () => {
+    const app = await createTestApp();
+    // NOW is after the huddle window: an 'auto' screen shows the coded board here.
+    expect((await feed(app)).mode).toBe('board');
+    const res = await app.call('PATCH', lobby, { as: 'usr_morgan', body: { content: 'whiteboard' } });
+    expect(res.status).toBe(200);
+    expect(res.body.content).toBe('whiteboard');
+    const pinned = await feed(app);
+    expect(pinned.mode).toBe('whiteboard');
+    expect(pinned.nextModeChangeAt).toBeNull();
+    expect((await media(app)).status).toBe(200);
+    // Even when the manager turns the huddle off for the lobby screens.
+    await app.call('POST', `${board()}/live`, { as: 'usr_morgan', body: { live: 'off' } });
+    expect((await feed(app)).mode).toBe('whiteboard');
+    // Tomorrow, with no board yet: back to the coded board and no media.
+    app.clock.now = new Date('2026-03-11T15:00:00.000Z');
+    const tomorrow = await feed(app);
+    expect(tomorrow.mode).toBe('board');
+    expect(tomorrow).not.toHaveProperty('whiteboard');
+    expect((await media(app)).status).toBe(404);
+  });
+
+  it("'board' never shows the whiteboard, even inside the window or after Start now", async () => {
+    const app = await createTestApp();
+    await app.call('PATCH', lobby, { as: 'usr_morgan', body: { content: 'board' } });
+    app.clock.now = IN_WINDOW;
+    const inWindow = await feed(app);
+    expect(inWindow.mode).toBe('board');
+    expect(inWindow).not.toHaveProperty('whiteboard');
+    expect(inWindow.nextModeChangeAt).toBeNull();
+    expect((await media(app)).status).toBe(404);
+    await app.call('POST', `${board()}/live`, { as: 'usr_morgan', body: { live: 'on' } });
+    expect((await feed(app)).mode).toBe('board');
+    expect((await media(app)).status).toBe(404);
+  });
+
+  it("treats display records without the field as 'auto'", async () => {
+    const app = await createTestApp();
+    await app.repo.updateDisplay('dsp_riverside_lobby', (d) => {
+      const { content: _drop, ...rest } = d;
+      return rest as typeof d;
+    });
+    app.clock.now = IN_WINDOW;
+    expect((await feed(app)).mode).toBe('whiteboard');
+    app.clock.now = new Date('2026-03-10T13:15:00.000Z');
+    expect((await feed(app)).mode).toBe('board');
+  });
+
+  it('only managers of the branch can change a display; revoked displays cannot be changed', async () => {
+    const app = await createTestApp();
+    expect((await app.call('PATCH', lobby, { as: 'usr_casey', body: { content: 'whiteboard' } })).status).toBe(403);
+    expect((await app.call('PATCH', lobby, { as: 'usr_jordan', body: { content: 'whiteboard' } })).status).toBe(403);
+    expect((await app.call('PATCH', lobby, { as: 'usr_morgan', body: { content: 'everything' } })).status).toBe(400);
+    const renamed = await app.call('PATCH', lobby, { as: 'usr_morgan', body: { name: 'Office TV' } });
+    expect(renamed.status).toBe(200);
+    expect(renamed.body.name).toBe('Office TV');
+    await app.call('POST', `${lobby}/revoke`, { as: 'usr_morgan' });
+    expect((await app.call('PATCH', lobby, { as: 'usr_morgan', body: { content: 'whiteboard' } })).status).toBe(409);
+  });
+});
+
 describe('staff wall preview', () => {
   it('mirrors the takeover and can force it outside the window (staff only)', async () => {
     const app = await createTestApp();

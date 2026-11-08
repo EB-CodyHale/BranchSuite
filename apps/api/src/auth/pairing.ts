@@ -75,7 +75,14 @@ export async function pollPairing(ctx: AppContext, pairingId: string, secret: st
 }
 
 /** Manager side: bind the waiting device to a new display in `branch`. */
-export async function claimPairing(ctx: AppContext, branch: Branch, codeInput: string, name: string, actorId: string): Promise<Display> {
+export async function claimPairing(
+  ctx: AppContext,
+  branch: Branch,
+  codeInput: string,
+  name: string,
+  actorId: string,
+  content: Display['content'] = 'auto',
+): Promise<Display> {
   const code = normalizePairingCode(codeInput);
   const now = ctx.now();
   const nowIso = now.toISOString();
@@ -90,6 +97,7 @@ export async function claimPairing(ctx: AppContext, branch: Branch, codeInput: s
     tokenPrefix: token.slice(0, 6),
     lastSeenAt: null,
     revokedAt: null,
+    content,
     createdAt: nowIso,
     updatedAt: nowIso,
     createdBy: actorId,

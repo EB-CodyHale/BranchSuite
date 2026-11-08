@@ -77,6 +77,7 @@
  *   GET    /branches/:b/displays                                -> Display[]          (manager)
  *   POST   /branches/:b/displays/claim DisplayClaimInput        -> Display            (manager)
  *   POST   /branches/:b/displays/:id/revoke                     -> Display            (manager)
+ *   PATCH  /branches/:b/displays/:id   DisplayUpdateInput        -> Display            (manager; name and what the screen shows)
  *
  *   POST   /realtime/negotiate                                  -> RealtimeNegotiateResponse (staff; groups = caller's branches + own user)
  *
@@ -335,6 +336,7 @@ export const paths = {
   promoteFiltered: (scopeId: string, id: string) => `/api/mail/filtered/${enc(scopeId)}/${enc(id)}/promote`,
   displays: (b: string) => `/api/branches/${enc(b)}/displays`,
   claimDisplay: (b: string) => `/api/branches/${enc(b)}/displays/claim`,
+  display: (b: string, id: string) => `/api/branches/${enc(b)}/displays/${enc(id)}`,
   revokeDisplay: (b: string, id: string) => `/api/branches/${enc(b)}/displays/${enc(id)}/revoke`,
   realtimeNegotiate: () => '/api/realtime/negotiate',
   wallPairStart: () => '/api/wall/pair/start',

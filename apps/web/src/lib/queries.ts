@@ -28,6 +28,7 @@ import {
   type CandidateUpdateInput,
   type Display,
   type DisplayClaimInput,
+  type DisplayUpdateInput,
   type EmailMessage,
   type FilteredMail,
   type Mailbox,
@@ -663,6 +664,13 @@ function afterDisplayWrite(qc: QueryClient, display: Display): void {
 export function useClaimDisplay() {
   return useApiMutation<{ branchId: string; input: DisplayClaimInput }, Display>(
     ({ branchId, input }) => api.post(paths.claimDisplay(branchId), input),
+    afterDisplayWrite,
+  );
+}
+
+export function useUpdateDisplay() {
+  return useApiMutation<{ branchId: string; displayId: string; input: DisplayUpdateInput }, Display>(
+    ({ branchId, displayId, input }) => api.patch(paths.display(branchId, displayId), input),
     afterDisplayWrite,
   );
 }

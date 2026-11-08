@@ -1,16 +1,16 @@
-import type { Display } from '@branchsuite/shared';
+import type { Display, DisplayContent } from '@branchsuite/shared';
 import { CircleCheck, MonitorOff, MonitorPlay, Plus, Tv } from 'lucide-react';
 import { useId, useRef, useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { relativeAgeLong } from '../../lib/format.js';
-import { useClaimDisplay, useDisplays, useRevokeDisplay } from '../../lib/queries.js';
+import { useClaimDisplay, useDisplays, useRevokeDisplay, useUpdateDisplay } from '../../lib/queries.js';
 import { Badge, type BadgeTone } from '../../ui/Badge.js';
 import { Button, buttonClasses } from '../../ui/Button.js';
 import { ConfirmDialog } from '../../ui/ConfirmDialog.js';
 import { cx } from '../../ui/cx.js';
 import { Dialog } from '../../ui/Dialog.js';
 import { EmptyState } from '../../ui/EmptyState.js';
-import { TextField } from '../../ui/Field.js';
+import { Select, TextField } from '../../ui/Field.js';
 import { Skeleton } from '../../ui/Skeleton.js';
 import { useToast } from '../../ui/Toast.js';
 import { formatPairingCode, isCompletePairingCode } from './pairingCode.js';
@@ -18,6 +18,14 @@ import { useSetupBranch } from './SetupBranchContext.js';
 import { ErrorNote, SectionHeader } from './setupUi.js';
 
 const ONLINE_MS = 5 * 60_000;
+
+/** What a screen shows. The whiteboard holds internal huddle detail, so 'whiteboard' is for private rooms only. */
+export const DISPLAY_CONTENT_OPTIONS: ReadonlyArray<{ value: DisplayContent; label: string; hint: string }> = [
+  { value: 'auto', label: 'Automatic', hint: 'Coded order board; the whiteboard during the huddle window. Right for lobby screens.' },
+  { value: 'whiteboard', label: 'Whiteboard all day', hint: "Today's whiteboard with full detail all day. Only for screens the public can't see, like a manager's office." },
+  { value: 'board', label: 'Order board only', hint: 'Coded order board; never switches to the whiteboard.' },
+];
+const contentHint = (c: DisplayContent) => DISPLAY_CONTENT_OPTIONS.find((o) => o.value === c)?.hint ?? '';
 
 export function displayStatus(d: Display, now: Date = new Date()): { label: string; tone: BadgeTone } {
   if (d.revokedAt) return { label: 'Revoked', tone: 'danger' };
@@ -29,7 +37,17 @@ export function DisplaysSection() {
   const { branchId, branch } = useSetupBranch();
   const displays = useDisplays(branchId);
   const revoke = useRevokeDisplay();
+  const update = useUpdateDisplay();
   const { toast } = useToast();
+  const setContent = (d: Display, content: DisplayContent) =>
+    update.mutate(
+      { branchId, displayId: d.id, input: { content } },
+      {
+        onSuccess: (next) =>
+          toast({ tone: 'success', title: `${next.name}: ${DISPLAY_CONTENT_OPTIONS.find((o) => o.value === next.content)?.label ?? next.content}`, description: 'The screen switches within a few seconds.' }),
+        onError: (e) => toast({ tone: 'danger', title: 'Could not change the display', description: e.message }),
+      },
+    );
   const [pairing, setPairing] = useState(false);
   const [revoking, setRevoking] = useState<Display | null>(null);
   const list = [...(displays.data ?? [])].sort((a, b) => Number(a.revokedAt !== null) - Number(b.revokedAt !== null) || a.name.localeCompare(b.name));
@@ -39,7 +57,7 @@ export function DisplaysSection() {
       <SectionHeader
         title="Displays"
         branchScoped
-        description="Lobby TVs that show this branch's wall. A TV holds a device key, not anyone's sign-in."
+        description="TVs that show this branch's wall: lobby screens show the coded order board, office screens can keep the whiteboard up. A TV holds a device key, not anyone's sign-in."
         actions={
           <>
             <Link to="/setup/wall" className={buttonClasses('ghost', 'sm')}>
@@ -93,6 +111,19 @@ export function DisplaysSection() {
                 <Badge tone={s.tone} className="px-2 py-1">
                   {s.label}
                 </Badge>
+                {revoked ? null : (
+                  <Select
+                    label={`What ${d.name} shows`}
+                    hideLabel
+                    value={d.content ?? 'auto'}
+                    onChange={(e) => setContent(d, e.target.value as DisplayContent)}
+                    disabled={update.isPending}
+                    options={DISPLAY_CONTENT_OPTIONS}
+                    title={contentHint(d.content ?? 'auto')}
+                    className="w-full sm:w-auto"
+                    selectClassName="w-full sm:w-52"
+                  />
+                )}
                 {revoked ? null : (
                   <Button size="sm" variant="ghost" onClick={() => setRevoking(d)} aria-label={`Revoke ${d.name}`}>
                     Revoke
@@ -180,6 +211,7 @@ function PairDisplayDialog({ branchId, onClose }: { branchId: string; onClose: (
   const { branch } = useSetupBranch();
   const [code, setCode] = useState('');
   const [name, setName] = useState('Lobby TV');
+  const [content, setContent] = useState<DisplayContent>('auto');
   const [submitted, setSubmitted] = useState(false);
   const doneRef = useRef<HTMLButtonElement>(null);
   const codeError = submitted && !isCompletePairingCode(code) ? 'Enter all six characters.' : null;
@@ -190,7 +222,7 @@ function PairDisplayDialog({ branchId, onClose }: { branchId: string; onClose: (
     e.preventDefault();
     setSubmitted(true);
     if (!isCompletePairingCode(code) || !name.trim()) return;
-    claim.mutate({ branchId, input: { code, name: name.trim() } });
+    claim.mutate({ branchId, input: { code, name: name.trim(), content } });
   };
 
   if (paired) {
@@ -233,6 +265,7 @@ function PairDisplayDialog({ branchId, onClose }: { branchId: string; onClose: (
         <ErrorNote error={claim.error} />
         <PairingCodeInput value={code} onChange={setCode} error={codeError} />
         <TextField label="Screen name" value={name} onChange={(e) => setName(e.target.value)} maxLength={60} required error={nameError} hint="Where it hangs, so you can find it later." />
+        <Select label="What this screen shows" value={content} onChange={(e) => setContent(e.target.value as DisplayContent)} options={DISPLAY_CONTENT_OPTIONS} hint={contentHint(content)} />
       </form>
     </Dialog>
   );

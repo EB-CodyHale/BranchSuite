@@ -48,11 +48,11 @@ describe('pairing code', () => {
     expect((within(dialog).getByRole('textbox', { name: 'Code on the TV' }) as HTMLInputElement).value).toBe('K7Q-29M');
     fireEvent.click(within(dialog).getByRole('button', { name: 'Pair display' }));
     expect(await screen.findByRole('dialog', { name: 'Display paired' })).toBeTruthy();
-    expect(calls.find((c) => c.method === 'POST')?.body).toEqual({ code: 'K7Q-29M', name: 'Lobby TV' });
+    expect(calls.find((c) => c.method === 'POST')?.body).toEqual({ code: 'K7Q-29M', name: 'Lobby TV', content: 'auto' });
   });
 
   it('describes display status in words', () => {
-    const base = { id: 'd', branchId: 'b', name: 'TV', tokenPrefix: 'x', createdAt: '', updatedAt: '', createdBy: null, updatedBy: null };
+    const base = { id: 'd', branchId: 'b', name: 'TV', tokenPrefix: 'x', content: 'auto' as const, createdAt: '', updatedAt: '', createdBy: null, updatedBy: null };
     const now = new Date('2026-03-02T15:00:00.000Z');
     expect(displayStatus({ ...base, lastSeenAt: null, revokedAt: '2026-03-01T00:00:00.000Z' }, now).label).toBe('Revoked');
     expect(displayStatus({ ...base, lastSeenAt: null, revokedAt: null }, now).label).toBe('Never connected');
