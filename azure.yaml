@@ -1,0 +1,52 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/main/schemas/v1.0/azure.yaml.json
+# Azure Developer CLI project. Runbook: docs/DEPLOYMENT.md.
+name: branchsuite
+metadata:
+  template: branchsuite@2.0.0
+
+infra:
+  provider: bicep
+  path: infra
+  module: main
+
+hooks:
+  # Checks required values and generates the wall HMAC secret once per environment.
+  preprovision:
+    posix:
+      shell: sh
+      run: node infra/scripts/ensure-env.mjs
+    windows:
+      shell: pwsh
+      run: node infra/scripts/ensure-env.mjs
+
+services:
+  web:
+    project: apps/web
+    language: js
+    host: staticwebapp
+    dist: dist
+    hooks:
+      # Stamps the Entra tenant ID into the built staticwebapp.config.json.
+      prepackage:
+        posix:
+          shell: sh
+          run: node ../../infra/scripts/stamp-tenant.mjs dist/staticwebapp.config.json
+        windows:
+          shell: pwsh
+          run: node ../../infra/scripts/stamp-tenant.mjs dist/staticwebapp.config.json
+
+  api:
+    project: apps/api
+    language: js
+    host: function
+    # The esbuild bundle is self-contained, so no remote npm install runs on Azure.
+    remoteBuild: false
+    dist: build/package
+    hooks:
+      prepackage:
+        posix:
+          shell: sh
+          run: node ../../infra/scripts/stage-api.mjs build/package
+        windows:
+          shell: pwsh
+          run: node ../../infra/scripts/stage-api.mjs build/package

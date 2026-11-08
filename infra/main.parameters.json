@@ -1,0 +1,23 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "environmentName": { "value": "${AZURE_ENV_NAME}" },
+    "location": { "value": "${AZURE_LOCATION}" },
+    "principalId": { "value": "${AZURE_PRINCIPAL_ID}" },
+    "tenantDomains": { "value": "${TENANT_DOMAINS}" },
+    "bootstrapAdminEmails": { "value": "${BOOTSTRAP_ADMIN_EMAILS}" },
+    "wallHmacSecret": { "value": "${AZURE_WALL_HMAC_SECRET}" },
+    "enablePrivateNetworking": { "value": "${ENABLE_PRIVATE_NETWORKING=true}" },
+    "staticWebAppLocation": { "value": "${AZURE_STATIC_WEB_APP_LOCATION=eastus2}" },
+    "openAiLocation": { "value": "${AZURE_OPENAI_LOCATION=}" },
+    "openAiModelName": { "value": "${AZURE_OPENAI_MODEL=gpt-4.1-mini}" },
+    "openAiModelVersion": { "value": "${AZURE_OPENAI_MODEL_VERSION=2025-04-14}" },
+    "openAiDeploymentSku": { "value": "${AZURE_OPENAI_DEPLOYMENT_SKU=DataZoneStandard}" },
+    "openAiDeploymentCapacity": { "value": "${AZURE_OPENAI_CAPACITY=30}" },
+    "webPubSubSku": { "value": "${AZURE_WEB_PUBSUB_SKU=Standard_S1}" },
+    "featurePipeline": { "value": "${FEATURE_PIPELINE=true}" },
+    "featurePersonalMail": { "value": "${FEATURE_PERSONAL_MAIL=true}" },
+    "grantDeployerDataAccess": { "value": "${GRANT_DEPLOYER_DATA_ACCESS=false}" }
+  }
+}

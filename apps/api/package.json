@@ -1,0 +1,30 @@
+{
+  "name": "@branchsuite/api",
+  "version": "2.0.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/functions.js",
+  "scripts": {
+    "dev": "tsx watch --env-file-if-exists=.env.local src/dev/server.ts",
+    "build": "node build.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@azure/cosmos": "^4.10.2",
+    "@azure/functions": "^4.17.0",
+    "@azure/identity": "^4.14.1",
+    "@azure/keyvault-secrets": "^4.12.0",
+    "@azure/web-pubsub": "^1.2.0",
+    "@branchsuite/shared": "*",
+    "openai": "^7.53.0",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.5",
+    "esbuild": "^0.28.2",
+    "tsx": "^4.23.15",
+    "typescript": "^5.9.3",
+    "vitest": "^5.1.0"
+  }
+}

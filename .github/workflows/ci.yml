@@ -1,0 +1,62 @@
+# Continuous integration: typecheck, test, build, and validate the infrastructure code.
+# Never deploys. Deployment is manual through deploy.yml.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  BICEP_VERSION: v0.49.2
+
+jobs:
+  app:
+    name: Typecheck, test, build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+      - name: Check the deploy package and SWA config
+        run: |
+          node -e "JSON.parse(require('fs').readFileSync('apps/web/dist/staticwebapp.config.json','utf8'))"
+          grep -q '__TENANT_ID__' apps/web/dist/staticwebapp.config.json
+          (cd apps/api && node ../../infra/scripts/stage-api.mjs "$RUNNER_TEMP/api-package")
+          test -f "$RUNNER_TEMP/api-package/dist/functions.js"
+
+  infra:
+    name: Validate Bicep and scripts
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Install Bicep ${{ env.BICEP_VERSION }}
+        run: az bicep install --version "$BICEP_VERSION"
+      - name: Build
+        run: az bicep build --file infra/main.bicep --stdout > /dev/null
+      - name: Lint
+        run: az bicep lint --file infra/main.bicep
+      - name: Script syntax
+        run: |
+          bash -n infra/scripts/setup-entra-auth.sh
+          for f in infra/scripts/*.mjs; do node --check "$f"; done
+          pwsh -NoProfile -Command "\$e=\$null; [System.Management.Automation.Language.Parser]::ParseFile('infra/scripts/setup-exchange-rbac.ps1',[ref]\$null,[ref]\$e) | Out-Null; if (\$e) { \$e; exit 1 }"

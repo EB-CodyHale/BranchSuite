@@ -1,0 +1,13 @@
+node_modules/
+dist/
+build/
+coverage/
+.env
+.env.*
+!.env.example
+local.settings.json
+*.log
+.DS_Store
+.vite/
+apps/api/.data/
+.azure/

@@ -1,0 +1,38 @@
+/*
+ * Wall-only styles that utilities cannot express: page transition keyframes and the burn-in drift
+ * transition. Colors come only from theme tokens, so both wall themes (night / daylight) work.
+ */
+
+@keyframes wall-page-in {
+  from {
+    opacity: 0;
+    transform: translateY(0.6em);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.wall-page-enter {
+  animation: wall-page-in 520ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+
+/* Slow drift so the 1-2px burn-in shift is never noticed as motion. */
+.wall-drift {
+  transition: transform 4s ease-in-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wall-page-enter {
+    animation: none;
+  }
+  .wall-drift {
+    transition: none;
+  }
+}
+
+/* The fullscreen button fades in on pointer movement and out again when idle. */
+.wall-fade {
+  transition: opacity 300ms ease;
+}

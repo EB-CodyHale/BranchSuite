@@ -1,0 +1,93 @@
+# Manual production deployment of application code (web + api) with azd.
+# - Runs only on workflow_dispatch; never on push.
+# - Uses the GitHub environment "production"; configure required reviewers on it.
+# - Signs in to Azure with OIDC federated credentials; the repo stores IDs only, no secrets.
+# Infrastructure changes (azd provision) run from an operator workstation; see docs/DEPLOYMENT.md.
+name: deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      service:
+        description: Service to deploy
+        type: choice
+        options: [all, web, api]
+        default: all
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy to production
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: production
+    env:
+      AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+      AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+      AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      AZURE_ENV_NAME: ${{ vars.AZURE_ENV_NAME }}
+      AZURE_LOCATION: ${{ vars.AZURE_LOCATION }}
+      AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+      SERVICE: ${{ inputs.service }}
+    steps:
+      - name: Check environment variables
+        run: |
+          for v in AZURE_CLIENT_ID AZURE_TENANT_ID AZURE_SUBSCRIPTION_ID AZURE_ENV_NAME AZURE_LOCATION AZURE_RESOURCE_GROUP; do
+            [ -n "${!v}" ] || { echo "::error::Set the '$v' variable on the production environment."; exit 1; }
+          done
+
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+
+      - name: Azure sign-in (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - uses: Azure/setup-azd@v2
+
+      - name: Configure azd
+        run: |
+          azd config set auth.useAzCliAuth true
+          azd env new "$AZURE_ENV_NAME" --location "$AZURE_LOCATION" --subscription "$AZURE_SUBSCRIPTION_ID" --no-prompt
+          azd env set AZURE_RESOURCE_GROUP "$AZURE_RESOURCE_GROUP"
+          # Read by infra/scripts/stamp-tenant.mjs, which replaces __TENANT_ID__ in the built config.
+          azd env set AZURE_TENANT_ID "$AZURE_TENANT_ID"
+
+      - name: Deploy
+        run: |
+          if [ "$SERVICE" = "all" ]; then azd deploy --all --no-prompt; else azd deploy "$SERVICE" --no-prompt; fi
+
+      - name: Verify tenant stamp
+        if: inputs.service != 'api'
+        run: |
+          ! grep -q '__TENANT_ID__' apps/web/dist/staticwebapp.config.json
+          grep -q "$AZURE_TENANT_ID" apps/web/dist/staticwebapp.config.json
+
+      - name: Smoke test
+        run: |
+          host="$(az staticwebapp list -g "$AZURE_RESOURCE_GROUP" --query "[?tags.\"azd-env-name\"=='$AZURE_ENV_NAME'].defaultHostname | [0]" -o tsv)"
+          [ -n "$host" ] || { echo "::error::Static Web App not found in $AZURE_RESOURCE_GROUP"; exit 1; }
+          for i in 1 2 3 4 5 6; do
+            code="$(curl -s -o /dev/null -w '%{http_code}' "https://$host/api/health")"
+            [ "$code" = "200" ] && { echo "Health check passed on https://$host"; exit 0; }
+            echo "Health returned $code; retrying in 20 s"; sleep 20
+          done
+          echo "::error::/api/health did not return 200"; exit 1
