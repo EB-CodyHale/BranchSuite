@@ -142,6 +142,35 @@ smaller tiles.
 - **Paging**: if the orders do not fit, pages change every "Seconds per page". If the user prefers reduced motion, pages swap without animation.
 - **Recovery after power loss**: `/wall` is a deep link. After a restart, it opens on the stored token without any user input.
 
+## 6a. Morning whiteboard takeover
+
+Every branch can prepare a **morning whiteboard** for the daily huddle (see [WHITEBOARD.md](WHITEBOARD.md)).
+During the huddle window, every paired display of the branch stops showing the coded order board and
+shows the whiteboard instead. When the window ends, the board comes back on its own.
+
+| When | What every paired display shows |
+| --- | --- |
+| Before the window (default 07:30) | The coded order board |
+| During the window (default 07:30–08:15, branch time), or after a manager presses **Start now** | The whiteboard: title, date, window, clock and the blocks, with real names (accounts, people) unless the board is set to **Wall codes** |
+| After the window, or after a manager presses **End** | The coded order board |
+
+How the switch works:
+
+- The server decides. `/api/wall/feed` returns `mode: 'whiteboard'` with the resolved whiteboard only while it is live; otherwise `mode: 'board'` and no whiteboard at all.
+- The feed also carries `nextModeChangeAt` (the next window start or end today). The display schedules a refetch at that moment plus a 0.5–2.5 s jitter, so all TVs switch on time without hitting the API in the same millisecond. Realtime `whiteboard` messages (sent on every change and at window start and end), the 60-second fallback poll and the 10-minute full refresh all still apply.
+- The modes cross-fade (0.7 s). With reduced motion the screen simply swaps.
+- Images are never public links. The display fetches each one from `/api/wall/media/<id>` with its `x-display-token` header and shows it from a local object URL, which is released when the image leaves the screen. The API serves an image only while the whiteboard that references it is live; at any other time it answers 404.
+- The display only sends its token to `/api/wall/media/…` addresses. Anything else in a feed is ignored.
+- Long whiteboards page every 15 seconds with a page indicator, the same way the board does.
+
+**Privacy.** The huddle happens before associates arrive, so the whiteboard may show real account and
+people names on every display while it is live. Keep content team-appropriate, and switch the board to
+**Wall codes** (in the Priority orders block) if a display can be seen from a public area during the
+huddle. Outside the window the API never sends whiteboard content or images to a display.
+
+Staff can check exactly what the TVs will show in **Board → Wall preview → Whiteboard**
+(`/board/wall-preview?mode=whiteboard`).
+
 ## 7. Troubleshooting
 
 | What you see | Cause | What to do |
@@ -154,6 +183,8 @@ smaller tiles.
 | The pairing code never connects | The code expired, or the manager chose a branch they do not manage | Wait for the new code and try again. Check that the manager manages the branch. |
 | A sign-in page appears on the TV | The site's edge configuration does not allow anonymous access to `/wall` | Make sure `/wall` and `/api/wall/*` are anonymous routes in `staticwebapp.config.json`. |
 | The type is too small | The TV reports a very low resolution, or browser zoom is reduced | Set browser zoom to 100 %. Use the TV's native resolution. |
+| The TV still shows the board during the huddle | The whiteboard for today is set to **End** (off), the window is wrong, or the display missed the switch | Check the status on the Whiteboard page. The display catches up on the next realtime message or within 60 seconds. |
+| A whiteboard image shows a crossed-out picture | The image is no longer referenced by today's live whiteboard, or the network dropped | Re-add the image on the Whiteboard page. Displays only receive images while the huddle is live. |
 | The screen goes black after some time | The OS or TV power settings | Set the screen timeout to Never. The wake lock cannot override all TV firmware. |
 
 ## 8. For developers
@@ -162,7 +193,9 @@ smaller tiles.
   - `WallBoard.tsx`: pure presentational board. Props: `feed`, optional staff `legend`, `frame`.
   - `layout.ts`: type scale, columns, `paginate`, burn-in drift (pure functions, unit-tested).
   - `WallDisplayPage.tsx`, `PairingScreen.tsx`, `useWallDeviceFeed.ts`, `deviceApi.ts`: the device. It uses plain `fetch`, never the staff API client, and never calls `/api/me`.
-  - `WallPreviewPage.tsx`, `ScaledFrame.tsx`: the staff preview, rendered at 1920x1080 and scaled into a 16:9 frame.
+  - `WallPreviewPage.tsx`, `ScaledFrame.tsx`: the staff preview, rendered at 1920x1080 and scaled into a 16:9 frame. A Board / Whiteboard toggle (`?mode=whiteboard`) previews the takeover.
+  - `WallScreen.tsx`: picks `WallBoard` or `WhiteboardSlide` (from `features/whiteboard/`) by `feed.mode` and cross-fades between them. Images go through a `MediaLoader` (display token on the TV, staff session in the preview).
+  - `useWallDeviceFeed.ts` also schedules a refetch at `feed.nextModeChangeAt` (`modeChangeDelay`, unit-tested).
 - Local run: `npm run dev`, then open `http://localhost:5173/wall`. To skip pairing, set the seeded dev token in the browser console:
   `localStorage.setItem('bs.wall.token', 'dev-wall-token-riverside-do-not-use-in-azure')`, then reload.
 - The device refreshes on every realtime `invalidate` message (debounced), polls every 60 seconds when the socket is down, and does a full refresh every 10 minutes in all cases.

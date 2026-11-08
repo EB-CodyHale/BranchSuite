@@ -19,6 +19,7 @@ const WallDisplayPage = lazyNamed(() => import('../features/wall/WallDisplayPage
 const AuthGate = lazyNamed(() => import('./auth/AuthGate.js'), 'AuthGate');
 const AppShell = lazyNamed(() => import('./AppShell.js'), 'AppShell');
 const BoardPage = lazyNamed(() => import('../features/board/BoardPage.js'), 'BoardPage');
+const WhiteboardPage = lazyNamed(() => import('../features/whiteboard/WhiteboardPage.js'), 'WhiteboardPage');
 const WallPreviewPage = lazyNamed(() => import('../features/wall/WallPreviewPage.js'), 'WallPreviewPage');
 const InboxPage = lazyNamed(() => import('../features/inbox/InboxPage.js'), 'InboxPage');
 const PipelinePage = lazyNamed(() => import('../features/pipeline/PipelinePage.js'), 'PipelinePage');
@@ -74,6 +75,7 @@ export const routes: RouteObject[] = [
           { index: true, element: page(<BoardPage />) },
           { path: 'board', element: <BoardAlias /> },
           { path: 'board/wall-preview', element: page(<WallPreviewPage />) },
+          { path: 'whiteboard', element: page(<WhiteboardPage />) },
           {
             path: 'pipeline',
             element: page(

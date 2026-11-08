@@ -2,6 +2,7 @@
  * FICTIONAL seed data for local development and demos. Every name, company, address and rate here
  * is invented (Microsoft sample company names and example.com domains). Dates are relative to now.
  */
+import { createHash } from 'node:crypto';
 import {
   addDays,
   generateWallCode,
@@ -26,9 +27,12 @@ import {
   type Task,
   type User,
   type WallCode,
+  type WhiteboardBlock,
 } from '@branchsuite/shared';
-import { DOC_KINDS, toDoc, type DocumentRepo } from '../data/documentRepo.js';
+import { DOC_KINDS, toDoc, whiteboardId, type DocumentRepo } from '../data/documentRepo.js';
+import type { MediaStore } from '../media/store.js';
 import { sha256Hex } from '../security/crypto.js';
+import { seedChartPng } from './png.js';
 
 export const DEV_DISPLAY_TOKEN = 'dev-wall-token-riverside-do-not-use-in-azure';
 
@@ -166,7 +170,13 @@ const CANDIDATES: CandidateSpec[] = [
 ];
 
 /** Populate an EMPTY repository. */
-export async function seedDevData(repo: DocumentRepo, now: Date = new Date()): Promise<void> {
+/** Seed whiteboard image id (Riverside). */
+export const SEED_MEDIA_ID = 'med_seed_fillrate';
+
+/**
+ * `media`: when given, the seed whiteboard also gets an image block backed by a generated PNG chart.
+ */
+export async function seedDevData(repo: DocumentRepo, now: Date = new Date(), media?: MediaStore): Promise<void> {
   const nowIso = now.toISOString();
   const today = todayKey(TZ, now);
   const isoDaysAgo = (n: number) => new Date(now.getTime() - n * 86_400_000).toISOString();
@@ -459,6 +469,57 @@ export async function seedDevData(repo: DocumentRepo, now: Date = new Date()): P
   ];
   for (const m of messages) await repo.store.create('mail', toDoc(DOC_KINDS.message, m, m.scopeId));
   for (const f of filtered) await repo.store.create('mail', toDoc(DOC_KINDS.filtered, f, f.scopeId));
+
+  // ----- today's morning whiteboard (Riverside), every block kind -----
+  const blocks: WhiteboardBlock[] = [
+    {
+      id: 'blk_talk', kind: 'talking_points', title: 'Talking points',
+      items: [
+        { id: 'itm_talk_1', text: 'Northwind Cold Chain wants 3 more pickers by Monday. Freezer gear is provided.' },
+        { id: 'itm_talk_2', text: 'Fabrikam machine operator order is brand new: five lines, all open.' },
+        { id: 'itm_talk_3', text: 'Thanks, everyone: fill rate is up four weeks in a row.' },
+      ],
+    },
+    {
+      id: 'blk_assign', kind: 'assignments', title: 'Assignments',
+      items: [
+        { id: 'itm_asg_1', userId: 'usr_casey', text: 'Call back yesterday’s forklift applicants before 10a', taskId: null, done: false },
+        { id: 'itm_asg_2', userId: 'usr_riley', text: 'Confirm Contoso 3rd-shift start for Monday', taskId: null, done: true },
+        { id: 'itm_asg_3', userId: null, text: 'Everyone: update pencils on the board before lunch', taskId: null, done: false },
+      ],
+    },
+    {
+      id: 'blk_orders', kind: 'priority_orders', title: 'Priority orders',
+      items: [
+        { orderId: 'ord_o1', note: 'Two open forklift lines on 1st' },
+        { orderId: 'ord_o2', note: 'Client asked twice this week' },
+        { orderId: 'ord_o9', note: 'Hard to fill: maintenance tech' },
+      ],
+    },
+    { id: 'blk_safety', kind: 'note', title: 'Safety minute', text: 'Cold-weather PPE reminders:\n- Insulated gloves for every freezer start\n- Check boots before the shift', tone: 'safety' },
+    { id: 'blk_numbers', kind: 'metrics', title: "Today's numbers" },
+  ];
+  if (media) {
+    const png = seedChartPng();
+    const dims = { width: png.readUInt32BE(16), height: png.readUInt32BE(20) };
+    await media.put(B1, SEED_MEDIA_ID, png, 'image/png');
+    await repo.createMedia({
+      id: SEED_MEDIA_ID, branchId: B1, contentType: 'image/png', bytes: png.length, ...dims,
+      fileName: 'fill-rate-last-5-days.png', sha256: createHash('sha256').update(png).digest('hex'), uploadedBy: 'usr_morgan', uploadedAt: nowIso,
+    });
+    blocks.splice(4, 0, { id: 'blk_chart', kind: 'image', title: 'Fill rate, last 5 days', mediaId: SEED_MEDIA_ID, caption: 'Fictional sample data' });
+  }
+  await repo.upsertWhiteboard(B1, today, () => ({
+    id: whiteboardId(B1, today),
+    branchId: B1,
+    date: today,
+    title: 'Morning huddle',
+    window: { start: '07:30', end: '08:15' },
+    live: 'auto',
+    orderLabels: 'name',
+    blocks,
+    ...audited('usr_morgan', isoDaysAgo(0)),
+  }));
 
   // ----- one paired lobby display (dev token printed by the dev server) -----
   await repo.createDisplay(

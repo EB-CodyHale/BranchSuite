@@ -68,6 +68,24 @@ describe('invalidationsFor', () => {
     expect(stale).not.toContain(JSON.stringify(keys.meMail()));
   });
 
+  it('whiteboard: that branch whiteboards (every day and list) and its wall preview', () => {
+    const qc = new QueryClient();
+    const all = [keys.whiteboard('b1', '2026-03-02'), keys.whiteboards('b1', '2026-02-01', '2026-03-31'), keys.whiteboard('b2', '2026-03-02'), keys.wallPreview('b1', 'whiteboard'), keys.board(['b1'])];
+    for (const k of all) qc.setQueryData(k, {});
+    for (const f of invalidationsFor(msg(['whiteboard']))) void qc.invalidateQueries({ ...f, refetchType: 'none' });
+    const stale = qc
+      .getQueryCache()
+      .getAll()
+      .filter((q) => q.state.isInvalidated)
+      .map((q) => JSON.stringify(q.queryKey))
+      .sort();
+    expect(stale).toEqual([keys.wallPreview('b1', 'whiteboard'), keys.whiteboard('b1', '2026-03-02'), keys.whiteboards('b1', '2026-02-01', '2026-03-31')].map((k) => JSON.stringify(k)).sort());
+  });
+
+  it('parses the whiteboard entity from a frame', () => {
+    expect(parseRealtimeFrame(JSON.stringify({ type: 'message', data: msg(['whiteboard']) }))?.entities).toEqual(['whiteboard']);
+  });
+
   it('personal scope tasks touch tasks only', () => {
     expect(staleAfter(msg(['tasks'], 'personal:usr_1'))).toEqual([JSON.stringify(keys.tasks('branch', ['b1']))]);
   });

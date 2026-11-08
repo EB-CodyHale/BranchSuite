@@ -1,5 +1,5 @@
 import { useQueryClient } from '@tanstack/react-query';
-import { Inbox, LayoutGrid, LogOut, Moon, Palette, Radio, RefreshCw, Settings, Sun, Users, WifiOff } from 'lucide-react';
+import { Inbox, LayoutGrid, LogOut, Moon, Palette, Presentation, Radio, RefreshCw, Settings, Sun, Users, WifiOff } from 'lucide-react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { useRealtime, type ConnectionStatus } from '../lib/realtime.js';
 import { cx } from '../ui/cx.js';
@@ -67,6 +67,10 @@ function PrimaryNav({ className }: { className?: string }) {
       <NavLink to="/" end className={(s) => cx(linkClass(s), 'font-display text-[1.0625rem] font-bold tracking-wide')}>
         <LayoutGrid aria-hidden="true" className="size-4" />
         Board
+      </NavLink>
+      <NavLink to="/whiteboard" className={secondary}>
+        <Presentation aria-hidden="true" className="size-4" />
+        Whiteboard
       </NavLink>
       {me.features.pipeline ? (
         <NavLink to="/pipeline" className={secondary}>

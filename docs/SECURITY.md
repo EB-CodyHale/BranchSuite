@@ -16,6 +16,8 @@ Related documents: [ARCHITECTURE.md](ARCHITECTURE.md), [DEPLOYMENT.md](DEPLOYMEN
 | Wall HMAC secret | Key Vault `wall-hmac-secret` | Secret |
 | Sign-in client secret | Static Web App app setting `AAD_CLIENT_SECRET` | Secret |
 | Wall display tokens | Lobby device `localStorage`; only `sha256(token)` on the server | Bearer credential for one branch's wall feed |
+| Morning whiteboards (talking points, assignments with staff names, priority orders with account names, notes) | Cosmos DB `board` (type `whiteboard`) | Confidential business data; shown in full on the wall only during the huddle window (§6a) |
+| Whiteboard screenshots (charts, reports) | Media storage account, private container `whiteboard-media`; metadata in Cosmos DB `board` (type `media`) | Confidential; may hold names or figures captured in the screenshot |
 
 ## 2. Threat model
 
@@ -33,6 +35,9 @@ Related documents: [ARCHITECTURE.md](ARCHITECTURE.md), [DEPLOYMENT.md](DEPLOYMEN
 | T10 | Cross-site scripting or clickjacking in the SPA | Web attacker | Strict CSP, frame-ancestors none, React escaping (§9) |
 | T11 | A malicious or careless deployment | Insider, compromised CI | Manual deploy with required reviewers, OIDC, least privilege (§10) |
 | T12 | Calls to the Function App that bypass Static Web Apps | Internet attacker | Linked backend restriction (§3) |
+| T13 | A lobby visitor or associate reads whiteboard content (names, accounts, tasks) outside the huddle | Visitor | Server-side window gating of feed and media; whiteboard never cached on the device (§6a) |
+| T14 | Whiteboard screenshots leak through a direct or shared storage URL | Anyone with a link | Private container, no public access, no SAS, no shared keys; bytes served only by the API (§6a) |
+| T15 | A crafted upload (script disguised as an image, oversized file) attacks staff or wall browsers | Malicious or compromised manager account | Magic-byte validation, type allow-list, size cap, `nosniff`, strict CSP (§6a) |
 
 ## 3. Identity and sign-in
 
@@ -63,6 +68,7 @@ Related documents: [ARCHITECTURE.md](ARCHITECTURE.md), [DEPLOYMENT.md](DEPLOYMEN
 | Azure OpenAI | `disableLocalAuth: true` | Cognitive Services OpenAI User |
 | Web PubSub | `disableLocalAuth: true` | Web PubSub Service Owner |
 | Storage | `allowSharedKeyAccess: false` | Blob Data Owner, Queue and Table Data Contributor |
+| Media storage (`stmedia<token>`) | `allowSharedKeyAccess: false`, `allowBlobPublicAccess: false`, `allowedCopyScope: AAD`, network bypass `None` | Storage Blob Data Contributor on the `whiteboard-media` container only |
 | Key Vault | RBAC authorization (no access policies) | Key Vault Secrets User |
 | Application Insights | `DisableLocalAuth: true` | Monitoring Metrics Publisher |
 | Microsoft Graph | Exchange RBAC for Applications (§7) | Application Mail.Read, scoped |
@@ -72,7 +78,7 @@ All services require TLS 1.2 or later. The Function App is HTTPS only.
 **Private networking** (`enablePrivateNetworking`, default on):
 
 - A VNet holds a delegated Function App integration subnet and a private endpoint subnet.
-- Cosmos DB, Azure OpenAI, Key Vault and Storage (blob, queue, table) have private endpoints and private DNS zones. Their public network access is **disabled**.
+- Cosmos DB, Azure OpenAI, Key Vault, Storage (blob, queue, table) and media storage (blob) have private endpoints and private DNS zones. Their public network access is **disabled**.
 - The Function App routes all outbound traffic through the VNet.
 
 **Web PubSub keeps public network access.** Browsers and lobby TVs connect to Web PubSub over WebSockets from the internet, outside the VNet. A private endpoint would make the service unreachable for them. The controls are:
@@ -100,6 +106,29 @@ The lobby wall is the only anonymous data surface. It is treated as public.
 - **Code rotation.** A manager can regenerate all wall codes for a branch, for example after a legend printout leaks.
 - **No navigation out.** The wall route has no links to staff screens and no controls.
 
+## 6a. Morning whiteboard (huddle mode)
+
+**Owner decision (2026-11-08).** Huddles happen before associates and visitors arrive. During the huddle window, every paired wall display of the branch switches from the coded order board to the whiteboard and may show **full detail**: staff names, account names, task assignments and screenshots. A board can set `orderLabels: 'code'` to show wall codes instead of account names for priority orders. Outside the window the wall shows only the coded order board (§6). This is a deliberate exception to the "wall is public" rule, limited in time, and enforced on the server.
+
+**Server-side gating (the invariant).** Outside the live window the API never sends whiteboard content or media to a display.
+
+- The window is branch-local (default 07:30–08:15, set per board) or a manager's **Start now** / **End**. The API decides "live" from its own clock and the branch time zone, never from the device.
+- `/api/wall/feed` includes the `whiteboard` field only when the board is live. Otherwise the feed is the coded order board, with only `nextModeChangeAt` so the display knows when to refetch. A display that misses the end of the window still loses the whiteboard on its next poll or realtime invalidation.
+- `/api/wall/media/:id` returns image bytes only when the display's branch board for today is live **and** one of its image blocks references that id. Every other case, including a wrong branch, an unknown id or a closed window, is the same `404`, so a display cannot probe which images exist or when a huddle is scheduled. Responses carry `Cache-Control: no-store`.
+- Realtime messages stay data-free (`invalidate` with entity `whiteboard`); displays always refetch through the gated API.
+- The wall renders images from in-memory object URLs (`blob:`, allowed by `img-src`), so no image URL is cached by the browser across the window boundary.
+
+**Media storage.**
+
+- A dedicated StorageV2 account for application data, separate from the Functions host account, so the host's broader roles never reach media and retention applies to app data only.
+- Container `whiteboard-media` has public access `None`; the account disallows anonymous blob access and shared keys, so **no SAS or account-key URL can exist**. The API reads and writes with its managed identity and is the only path to the bytes: staff through `/api/branches/:b/media/:id` (branch staff only), displays through the gated wall route above. No `*.blob.core.windows.net` URL is ever sent to a browser.
+- Public network access is disabled with private networking; the account is reachable only through its private endpoint from the Function App's VNet.
+- Blob access logs (`StorageRead`, `StorageWrite`, `StorageDelete`) go to Log Analytics.
+
+**Upload validation.** Only managers upload. The API accepts PNG, JPEG and WebP up to 8 MB, checks the file's **magic bytes** against the declared `Content-Type` (rejecting mismatches such as HTML or SVG renamed to `.png`), reads width and height from the header bytes, stores a SHA-256, and never overwrites an existing object. SVG is not accepted. Images are served with their verified content type and `X-Content-Type-Options: nosniff`.
+
+**Retention.** A lifecycle management rule deletes whiteboard images **90 days** after upload. Blob and container soft delete keep a deleted image 7 more days for recovery, then it is gone. Whiteboard documents follow the board container's rules (§12).
+
 ## 7. Mail scoping
 
 - The Function App identity reads mail through Microsoft Graph with the **Application Mail.Read** role from **Exchange RBAC for Applications**.
@@ -124,7 +153,7 @@ The lobby wall is the only anonymous data surface. It is treated as public.
 
 | Header | Value |
 | --- | --- |
-| `Content-Security-Policy` | `default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self' wss://*.webpubsub.azure.com; object-src 'none'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'` |
+| `Content-Security-Policy` | `default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self' wss://*.webpubsub.azure.com; object-src 'none'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'` |
 | `Strict-Transport-Security` | `max-age=63072000; includeSubDomains` |
 | `X-Content-Type-Options` | `nosniff` |
 | `Referrer-Policy` | `strict-origin-when-cross-origin` |
@@ -134,6 +163,7 @@ The lobby wall is the only anonymous data surface. It is treated as public.
 
 - No inline scripts and no inline `<style>` elements are allowed. React `style` props are set through the DOM and are not affected. Fonts are self-hosted, so no third-party origin is needed.
 - `connect-src` allows only the app's own origin and Web PubSub WebSockets.
+- `img-src` adds `blob:` for whiteboard images: the app fetches image bytes from the authenticated API and shows them through in-memory object URLs. `blob:` URLs can only be created by scripts already running on the app's own origin, so this adds no new source of content.
 
 ## 10. Deployment pipeline
 
@@ -166,6 +196,7 @@ The setup script passes the client secret to `az staticwebapp appsettings set` o
 | Cosmos DB backups | Continuous, 7-day point-in-time restore |
 | Log Analytics / App Insights | 30 days |
 | Key Vault deleted objects | 90 days soft delete, purge protection on |
+| Whiteboard images (blob) | 90 days after upload (lifecycle rule; runs once a day), then 7 days soft delete |
 
 All containers have `defaultTtl: -1`: TTL is enabled, and only documents with a `ttl` field expire.
 
@@ -173,6 +204,7 @@ All containers have `defaultTtl: -1`: TTL is enabled, and only documents with a 
 
 - **Application audit.** Order, candidate, account and user changes write an `event` document with actor, time and a short summary.
 - **Key Vault.** Audit logs (every secret read) go to Log Analytics.
+- **Media storage.** Blob read, write and delete logs, with the caller identity, go to Log Analytics.
 - **Function App.** `FunctionAppLogs` and Application Insights telemetry go to Log Analytics.
 - **Entra.** Sign-in logs for the `BranchSuite` enterprise app show every sign-in and every blocked attempt.
 - **Exchange.** The admin audit log records changes to the mailbox group, management scope and role assignment.
@@ -184,7 +216,9 @@ Suggested alerts: repeated 403 `not_provisioned`, Key Vault secret reads from an
 | Risk | Why it remains | Mitigation |
 | --- | --- | --- |
 | A wall screen shows coded data in a public lobby | That is the purpose of the wall | Defaults hide pay and location; codes rotate; displays revoke |
-| A display token copied from a device reads one branch's coded feed until revoked | Bearer token on an unattended device | Revoke on loss; the feed holds no PII by design |
+| A display token copied from a device reads one branch's coded feed until revoked | Bearer token on an unattended device | Revoke on loss; the feed holds no PII by design. During the huddle window the same token also reads that branch's whiteboard and its images. |
+| A manager presses **Start now** (or sets the window) while associates or visitors are in the lobby, and full-detail whiteboard content appears on public screens | The owner chose full detail on all displays during the huddle; the API cannot see who is in the room | Window defaults to before opening hours; **End** takes effect on the next poll or realtime message (seconds); `orderLabels: 'code'` per board; manager training; every start/end is audited |
+| Screenshots can contain anything the manager captured | Free-form images cannot be inspected for content | Manager-only upload, 90-day retention, served only through the gated API |
 | Web PubSub is reachable from the internet | Browser clients need it | Keys off, anonymous denied, tokens with fixed groups, no data in messages |
 | The Function App host name is public | Static Web Apps linked backends need it | Linked-backend restriction, Entra-only publishing, no anonymous staff routes |
 | Microsoft abuse monitoring may keep AI prompts for up to 30 days | Default Azure OpenAI terms | Apply for modified abuse monitoring |

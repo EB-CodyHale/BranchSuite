@@ -32,9 +32,10 @@ const router = createRouter();
 const port = Number(process.env.PORT ?? 7071);
 
 if (ctx.repo instanceof MemoryRepo && ctx.repo.memory.isEmpty()) {
-  await seedDevData(ctx.repo, ctx.now());
+  await seedDevData(ctx.repo, ctx.now(), ctx.media);
   ctx.log.info('Seeded fictional dev data', { devDisplayToken: DEV_DISPLAY_TOKEN });
 }
+if (config.devWhiteboardLive) ctx.log.info("DEV_WHITEBOARD_LIVE is on: today's whiteboard takes over wall displays unless set to 'off'.");
 
 /** Reads at most `limit` bytes; resolves null (and stops reading) as soon as the body is larger. */
 function readBody(req: IncomingMessage, limit: number): Promise<Buffer | null> {

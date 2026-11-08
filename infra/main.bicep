@@ -97,6 +97,7 @@ var names = {
   appInsights: 'appi-${resourceToken}'
   cosmos: 'cosmos-${resourceToken}'
   storage: 'st${resourceToken}'
+  mediaStorage: 'stmedia${resourceToken}'
   plan: 'plan-${resourceToken}'
   openAi: 'oai-${resourceToken}'
   webPubSub: 'wps-${resourceToken}'
@@ -106,6 +107,8 @@ var names = {
 }
 // Flex Consumption reads the package from a container named for the app.
 var deploymentContainerName = 'app-package-${take(functionAppName, 32)}-${take(resourceToken, 7)}'
+// Whiteboard screenshots (apps/api/src/media/store.ts); private, served only through the API.
+var mediaContainerName = 'whiteboard-media'
 var publicAccess = !enablePrivateNetworking
 
 // ---------- modules ----------
@@ -151,6 +154,18 @@ module storage 'modules/storage.bicep' = {
   }
 }
 
+module mediaStorage 'modules/media-storage.bicep' = {
+  name: 'media-storage'
+  params: {
+    location: location
+    tags: tags
+    accountName: names.mediaStorage
+    containerName: mediaContainerName
+    publicNetworkAccess: publicAccess
+    logAnalyticsId: monitoring.outputs.logAnalyticsId
+  }
+}
+
 module openAi 'modules/openai.bicep' = {
   name: 'openai'
   params: {
@@ -190,12 +205,14 @@ module keyVault 'modules/keyvault.bicep' = {
 }
 
 // Private endpoints: one per sub-resource. Storage needs blob (host + deployment package),
-// queue and table (Functions host features). Targets are built from names because a loop
-// needs values known at deployment start; dependsOn below orders them after the targets.
+// queue and table (Functions host features); media storage needs blob only. Targets are built
+// from names because a loop needs values known at deployment start; dependsOn below orders them
+// after the targets.
 var cosmosId = resourceId('Microsoft.DocumentDB/databaseAccounts', names.cosmos)
 var openAiId = resourceId('Microsoft.CognitiveServices/accounts', names.openAi)
 var keyVaultId = resourceId('Microsoft.KeyVault/vaults', names.keyVault)
 var storageId = resourceId('Microsoft.Storage/storageAccounts', names.storage)
+var mediaStorageId = resourceId('Microsoft.Storage/storageAccounts', names.mediaStorage)
 var privateEndpoints = [
   { name: 'pe-${names.cosmos}', target: cosmosId, groupId: 'Sql', zone: 'cosmos' }
   { name: 'pe-${names.openAi}', target: openAiId, groupId: 'account', zone: 'openai' }
@@ -203,12 +220,13 @@ var privateEndpoints = [
   { name: 'pe-${names.storage}-blob', target: storageId, groupId: 'blob', zone: 'blob' }
   { name: 'pe-${names.storage}-queue', target: storageId, groupId: 'queue', zone: 'queue' }
   { name: 'pe-${names.storage}-table', target: storageId, groupId: 'table', zone: 'table' }
+  { name: 'pe-${names.mediaStorage}-blob', target: mediaStorageId, groupId: 'blob', zone: 'blob' }
 ]
 
 module endpoints 'modules/private-endpoint.bicep' = [
   for pe in privateEndpoints: if (enablePrivateNetworking) {
     name: pe.name
-    dependsOn: [cosmos, openAi, keyVault, storage]
+    dependsOn: [cosmos, openAi, keyVault, storage, mediaStorage]
     params: {
       location: location
       tags: tags
@@ -252,6 +270,8 @@ module functions 'modules/functions.bicep' = {
       BOOTSTRAP_ADMIN_EMAILS: bootstrapAdminEmails
       FEATURE_PIPELINE: string(featurePipeline)
       FEATURE_PERSONAL_MAIL: string(featurePersonalMail)
+      MEDIA_BLOB_ENDPOINT: mediaStorage.outputs.blobEndpoint
+      MEDIA_CONTAINER: mediaStorage.outputs.containerName
     }
   }
 }
@@ -268,6 +288,8 @@ module roles 'modules/roles.bicep' = {
     webPubSubName: webPubSub.outputs.name
     keyVaultName: keyVault.outputs.name
     appInsightsName: monitoring.outputs.appInsightsName
+    mediaStorageAccountName: mediaStorage.outputs.accountName
+    mediaContainerName: mediaStorage.outputs.containerName
   }
 }
 
@@ -298,6 +320,7 @@ output AZURE_KEY_VAULT_ENDPOINT string = keyVault.outputs.uri
 output AZURE_WEB_PUBSUB_ENDPOINT string = webPubSub.outputs.endpoint
 output AZURE_FUNCTION_APP_NAME string = functions.outputs.appName
 output AZURE_FUNCTION_PRINCIPAL_ID string = functions.outputs.principalId
+output AZURE_MEDIA_STORAGE_NAME string = mediaStorage.outputs.accountName
 output AZURE_STATIC_WEB_APP_NAME string = staticWebApp.outputs.name
 output SERVICE_API_URI string = 'https://${functions.outputs.defaultHostName}'
 output SERVICE_WEB_URI string = staticWebApp.outputs.uri

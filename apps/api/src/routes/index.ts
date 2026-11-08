@@ -11,6 +11,7 @@ import { registerSystemRoutes } from './system.js';
 import { registerTaskRoutes } from './tasks.js';
 import { registerUserRoutes } from './users.js';
 import { registerWallRoutes } from './wall.js';
+import { registerWhiteboardRoutes } from './whiteboards.js';
 
 export function createRouter(): Router {
   const router = new Router();
@@ -25,5 +26,6 @@ export function createRouter(): Router {
   registerTaskRoutes(router);
   registerMailboxRoutes(router);
   registerWallRoutes(router);
+  registerWhiteboardRoutes(router);
   return router;
 }

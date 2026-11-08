@@ -4,11 +4,12 @@ import { authenticateDisplay } from '../auth/display.js';
 import { claimPairing, PAIRING_SECRET_HEADER, pollPairing, startPairing } from '../auth/pairing.js';
 import { notFound } from '../http/errors.js';
 import type { Router } from '../http/router.js';
-import { created, ok } from '../http/types.js';
+import { bytes, created, ok } from '../http/types.js';
 import { parse } from '../http/validate.js';
 import { groups } from '../realtime/publisher.js';
 import { audit, managedBranch, notify, staff } from './support.js';
 import { buildWallFeed } from './wallFeed.js';
+import { imageMediaIds, isBoardLive, todaysBoard } from './whiteboardView.js';
 
 export const WALL_POLL_SECONDS = 60;
 
@@ -22,6 +23,27 @@ export function registerWallRoutes(router: Router): void {
     const branch = await ctx.repo.getBranch(display.branchId);
     if (!branch || !branch.active) throw notFound('This display’s branch is not active.');
     return ok(await buildWallFeed(ctx, branch));
+  });
+
+  /**
+   * WALL MEDIA INVARIANT: bytes are served to a display only while its branch's board for today is live
+   * AND one of that board's image blocks references the id. Every other case is the same 404 (not 403),
+   * so a display cannot probe which media exist or when a board is scheduled.
+   */
+  router.get('/wall/media/:id', async (req, ctx) => {
+    const display = await authenticateDisplay(req, ctx);
+    const missing = () => notFound('No such image.');
+    const branch = await ctx.repo.getBranch(display.branchId);
+    if (!branch || !branch.active) throw missing();
+    const now = ctx.now();
+    const board = await todaysBoard(ctx, branch, now);
+    const id = req.params.id!;
+    if (!isBoardLive(ctx, branch, board, now) || !imageMediaIds(board).has(id)) throw missing();
+    const media = await ctx.repo.getMedia(branch.id, id);
+    if (!media) throw missing();
+    const content = await ctx.media.get(branch.id, media.id);
+    if (!content) throw missing();
+    return bytes(content, media.contentType, { 'cache-control': 'no-store' });
   });
 
   router.post('/wall/negotiate', async (req, ctx) => {

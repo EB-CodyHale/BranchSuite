@@ -212,7 +212,13 @@ export function registerAccountRoutes(router: Router): void {
 
   router.get(
     '/branches/:b/wall/preview',
-    staff(async (req, ctx, caller) => ok(await buildWallFeed(ctx, readableBranch(caller, req.params.b!)))),
+    staff(async (req, ctx, caller) => {
+      const branch = readableBranch(caller, req.params.b!);
+      const mode = req.query.get('mode');
+      if (mode !== null && mode !== 'board' && mode !== 'whiteboard') throw badRequest('mode must be board or whiteboard.');
+      // ?mode=whiteboard renders today's board even outside its window (staff only; never on /wall/feed).
+      return ok(await buildWallFeed(ctx, branch, { preview: { forceWhiteboard: mode === 'whiteboard' } }));
+    }),
   );
 }
 

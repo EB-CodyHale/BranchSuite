@@ -3,7 +3,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { jsonResponse } from '../../test/fixtures.js';
 import { WALL_DISPLAY_KEY, WALL_TOKEN_KEY } from './deviceApi.js';
 import { PAIR_POLL_MS } from './PairingScreen.js';
+import { fullView } from '../whiteboard/testFixtures.js';
 import { wallFeed, wallOrder } from './testFeed.js';
+import { MODE_SWITCH_JITTER_MS, modeChangeDelay } from './useWallDeviceFeed.js';
 import { WallDisplayPage } from './WallDisplayPage.js';
 
 interface Call {
@@ -149,5 +151,98 @@ describe('WallDisplayPage', () => {
     await flush();
     expect(calls.filter((c) => c.url === '/api/wall/pair/start')).toHaveLength(2);
     expect(screen.getByText('Pairing code A C D - 3 4 7')).toBeTruthy();
+  });
+
+  describe('scheduled whiteboard takeover', () => {
+    beforeEach(() => {
+      URL.createObjectURL = vi.fn(() => 'blob:wall-media');
+      URL.revokeObjectURL = vi.fn();
+    });
+
+    it('refetches at nextModeChangeAt, switches to the whiteboard, and back when the window ends', async () => {
+      localStorage.setItem(WALL_TOKEN_KEY, 'tok_ok');
+      // now = 15:00Z; the huddle starts 30 s later and ends 45 min after that.
+      const start = '2026-03-02T15:00:30.000Z';
+      const end = '2026-03-02T15:45:30.000Z';
+      const board = wallFeed([wallOrder({ role: 'Order picker' })], { nextModeChangeAt: start });
+      const huddle = wallFeed([wallOrder({ role: 'Order picker' })], { mode: 'whiteboard', whiteboard: fullView(), nextModeChangeAt: end });
+      const after = wallFeed([wallOrder({ role: 'Order picker' })], { nextModeChangeAt: null });
+      const calls = mockFetch({
+        // The server's answer depends on the clock, so fallback polls cannot mask a late switch.
+        'GET /api/wall/feed': () => {
+          const t = Date.now();
+          return jsonResponse(t < Date.parse(start) ? board : t < Date.parse(end) ? huddle : after);
+        },
+        'POST /api/wall/negotiate': NEGOTIATE,
+        'GET /api/wall/media/med_1': () => new Response(new Blob(['png'], { type: 'image/png' }), { status: 200, headers: { 'content-type': 'image/png' } }),
+      });
+      render(<WallDisplayPage />);
+      await flush();
+      expect(screen.getByText('Order picker')).toBeTruthy();
+      expect(screen.queryByText('Welcome back, Jordan')).toBeNull();
+      expect(calls.filter((c) => c.url === '/api/wall/feed')).toHaveLength(1);
+      // Displays never ask for media while the board is showing.
+      expect(calls.some((c) => c.url.startsWith('/api/wall/media/'))).toBe(false);
+
+      await flush(29_000);
+      expect(calls.filter((c) => c.url === '/api/wall/feed')).toHaveLength(1);
+      await flush(1_000 + MODE_SWITCH_JITTER_MS.max);
+      await flush();
+      expect(calls.filter((c) => c.url === '/api/wall/feed')).toHaveLength(2);
+      expect(screen.getByRole('region', { name: 'Riverbend morning whiteboard' })).toBeTruthy();
+      expect(screen.getByText('Welcome back, Jordan')).toBeTruthy();
+      expect(document.querySelector('[data-wall-mode]')!.getAttribute('data-wall-mode')).toBe('whiteboard');
+
+      // Images: fetched with the display token (no cookies), shown through an object URL.
+      const media = calls.filter((c) => c.url === '/api/wall/media/med_1');
+      expect(media.length).toBeGreaterThanOrEqual(1);
+      expect(media[0]!.headers['x-display-token']).toBe('tok_ok');
+      expect(media[0]!.headers['x-dev-user']).toBeUndefined();
+      expect(screen.getByRole('img', { name: 'Fill rate by week' }).getAttribute('src')).toBe('blob:wall-media');
+
+      // Still the whiteboard just before the end (polls and the 10-minute refresh keep it).
+      await flush(45 * 60_000 - 3_000);
+      expect(document.querySelector('[data-wall-mode]')!.getAttribute('data-wall-mode')).toBe('whiteboard');
+      // The window ends: the scheduled refetch (not the next 60 s poll at 15:46) brings the board back.
+      await flush(1_000 + MODE_SWITCH_JITTER_MS.max + 50);
+      await flush();
+      expect(document.querySelector('[data-wall-mode]')!.getAttribute('data-wall-mode')).toBe('board');
+      // Cross-fade: the outgoing whiteboard is hidden from assistive tech, then removed.
+      expect(screen.getByText('Welcome back, Jordan').closest('[aria-hidden="true"]')).toBeTruthy();
+      await flush(800);
+      expect(screen.queryByText('Welcome back, Jordan')).toBeNull();
+      expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:wall-media');
+    });
+
+    it('never sends the display token to a media URL outside /api/wall/media/', async () => {
+      localStorage.setItem(WALL_TOKEN_KEY, 'tok_ok');
+      const view = fullView();
+      const tampered = { ...view, blocks: view.blocks.map((b) => (b.kind === 'image' ? { ...b, mediaUrl: 'https://example.test/steal' } : b)) };
+      const calls = mockFetch({
+        'GET /api/wall/feed': () => jsonResponse(wallFeed([], { mode: 'whiteboard', whiteboard: tampered })),
+        'POST /api/wall/negotiate': NEGOTIATE,
+      });
+      render(<WallDisplayPage />);
+      await flush();
+      await flush();
+      expect(screen.getByText('Welcome back, Jordan')).toBeTruthy();
+      expect(calls.some((c) => c.url.includes('example.test'))).toBe(false);
+      expect(screen.getByRole('img', { name: 'Fill rate by week (image unavailable)' })).toBeTruthy();
+    });
+  });
+});
+
+describe('modeChangeDelay', () => {
+  const now = Date.parse('2026-03-02T13:29:00.000Z');
+  it('waits until the switch plus jitter', () => {
+    expect(modeChangeDelay('2026-03-02T13:30:00.000Z', now, () => 0)).toBe(60_000 + MODE_SWITCH_JITTER_MS.min);
+    expect(modeChangeDelay('2026-03-02T13:30:00.000Z', now, () => 1)).toBe(60_000 + MODE_SWITCH_JITTER_MS.max);
+  });
+  it('ignores missing, invalid, long-past and far-future times', () => {
+    expect(modeChangeDelay(null, now)).toBeNull();
+    expect(modeChangeDelay(undefined, now)).toBeNull();
+    expect(modeChangeDelay('soon', now)).toBeNull();
+    expect(modeChangeDelay('2026-03-02T13:00:00.000Z', now)).toBeNull();
+    expect(modeChangeDelay('2026-03-05T13:00:00.000Z', now)).toBeNull();
   });
 });

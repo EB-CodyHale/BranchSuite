@@ -18,8 +18,15 @@ param webPubSubName string
 param keyVaultName string
 param appInsightsName string
 
+@description('App data (media) storage account.')
+param mediaStorageAccountName string
+
+@description('Whiteboard media container in the media storage account.')
+param mediaContainerName string
+
 var roles = {
   storageBlobDataOwner: 'b7e6dc6d-f1e8-4753-8033-0f276bb0955b'
+  storageBlobDataContributor: 'ba92f5b4-2d11-453d-a403-e96b0029c9fe'
   storageQueueDataContributor: '974c5e8b-45b9-4653-ba55-5f855dd0fb88'
   storageTableDataContributor: '0a9a7e1f-b9d0-4cc4-a60d-0319b160aaa3'
   cognitiveServicesOpenAiUser: '5e0bd9bd-7b93-4f28-af87-19fc36ad61bd'
@@ -47,6 +54,30 @@ resource vault 'Microsoft.KeyVault/vaults@2025-05-01' existing = {
 }
 resource appInsights 'Microsoft.Insights/components@2020-02-02' existing = {
   name: appInsightsName
+}
+
+resource mediaStorage 'Microsoft.Storage/storageAccounts@2025-06-01' existing = {
+  name: mediaStorageAccountName
+}
+resource mediaBlobService 'Microsoft.Storage/storageAccounts/blobServices@2025-06-01' existing = {
+  parent: mediaStorage
+  name: 'default'
+}
+resource mediaContainer 'Microsoft.Storage/storageAccounts/blobServices/containers@2025-06-01' existing = {
+  parent: mediaBlobService
+  name: mediaContainerName
+}
+
+// Read and write whiteboard images, scoped to the one container (not the account). Contributor,
+// not Owner: the API never needs to change ACLs or blob ownership.
+resource mediaAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(mediaContainer.id, functionPrincipalId, roles.storageBlobDataContributor)
+  scope: mediaContainer
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', roles.storageBlobDataContributor)
+    principalId: functionPrincipalId
+    principalType: 'ServicePrincipal'
+  }
 }
 
 var storageRoles = [roles.storageBlobDataOwner, roles.storageQueueDataContributor, roles.storageTableDataContributor]

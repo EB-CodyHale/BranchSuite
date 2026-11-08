@@ -37,7 +37,7 @@ describe('app shell', () => {
 
     const nav = screen.getAllByRole('navigation', { name: 'Primary' })[0]!;
     const links = within(nav).getAllByRole('link').map((a) => a.textContent);
-    expect(links).toEqual(['Board', 'Inbox', 'Setup']);
+    expect(links).toEqual(['Board', 'Whiteboard', 'Inbox', 'Setup']);
     expect(within(nav).getByRole('link', { name: 'Board' }).getAttribute('aria-current')).toBe('page');
 
     const scope = screen.getByRole('combobox', { name: 'Branch scope' }) as HTMLSelectElement;
@@ -53,7 +53,7 @@ describe('app shell', () => {
     setup('/', withMe(meResponse({ pipeline: true, user: { role: 'member' } })));
     await screen.findByRole('heading', { name: 'Job order board' });
     const nav = screen.getAllByRole('navigation', { name: 'Primary' })[0]!;
-    expect(within(nav).getAllByRole('link').map((a) => a.textContent)).toEqual(['Board', 'Pipeline', 'Inbox']);
+    expect(within(nav).getAllByRole('link').map((a) => a.textContent)).toEqual(['Board', 'Whiteboard', 'Pipeline', 'Inbox']);
   });
 
   it('redirects a member away from setup', async () => {

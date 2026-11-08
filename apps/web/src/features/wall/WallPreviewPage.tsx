@@ -168,7 +168,7 @@ function PreviewBody(props: { mode: PreviewMode; branchName: string; feed: WallF
         <div data-theme="night" className="grid h-full place-items-center bg-bg text-fg">
           <EmptyState
             title="No whiteboard for today yet"
-            description="Prepare one in Board → Whiteboard. Displays keep showing the board until a whiteboard is live."
+            description="Prepare one under Whiteboard. Displays keep showing the board until a whiteboard is live."
             action={
               <Link to="/whiteboard" className={buttonClasses('primary', 'lg')}>
                 Open the whiteboard

@@ -111,7 +111,7 @@ Optional overrides (defaults shown):
 
 | azd variable | Default | Effect |
 | --- | --- | --- |
-| `ENABLE_PRIVATE_NETWORKING` | `true` | Private endpoints for Cosmos DB, OpenAI, Key Vault and Storage, and public access off on those resources. |
+| `ENABLE_PRIVATE_NETWORKING` | `true` | Private endpoints for Cosmos DB, OpenAI, Key Vault, Storage and media storage, and public access off on those resources. |
 | `AZURE_STATIC_WEB_APP_LOCATION` | `eastus2` | Static Web Apps region. |
 | `AZURE_OPENAI_LOCATION` | primary region | OpenAI region. |
 | `AZURE_OPENAI_MODEL` / `AZURE_OPENAI_MODEL_VERSION` | `gpt-4.1-mini` / `2025-04-14` | Model. |
@@ -146,6 +146,7 @@ The first run takes about 10 to 15 minutes. It creates the resources below. `<to
 | Log Analytics + Application Insights | `log-<token>`, `appi-<token>` | Local auth off; the Function App sends telemetry with its identity. |
 | Cosmos DB (serverless) | `cosmos-<token>` | Database `branchsuite`; containers `directory`, `board`, `mail`; local auth off; 7-day point-in-time restore. |
 | Storage | `st<token>` | Shared key off; Functions host and deployment package. |
+| Media storage (StorageV2) | `stmedia<token>` | App data only: private container `whiteboard-media` for whiteboard screenshots. Shared key off, anonymous access off, TLS 1.2; public network access off with private networking. Lifecycle rule deletes images 90 days after upload; blob and container soft delete 7 days. Blob access logs go to Log Analytics. |
 | Function App (Flex Consumption FC1) | `func-<token>` | Node 22, system-assigned identity, basic-auth publishing off. |
 | Azure OpenAI | `oai-<token>` | Local auth off; deployment `triage`. |
 | Web PubSub | `wps-<token>` | Local auth off; hub `branchsuite` denies anonymous connects. |
@@ -155,7 +156,7 @@ The first run takes about 10 to 15 minutes. It creates the resources below. `<to
 
 Check: `azd env get-values` shows `SERVICE_WEB_URI`, `AZURE_FUNCTION_APP_NAME` and `AZURE_FUNCTION_PRINCIPAL_ID`.
 
-> **Private networking and operators.** With private networking on, Cosmos DB, Key Vault, OpenAI and Storage refuse data-plane calls from the internet. Portal Data Explorer and the Key Vault secrets blade fail from your workstation. That is intended. For support work, connect through a VNet-connected path (VPN gateway, Bastion jump host) or use the application itself. Control-plane operations (`azd provision`, role assignments) still work.
+> **Private networking and operators.** With private networking on, Cosmos DB, Key Vault, OpenAI and both storage accounts refuse data-plane calls from the internet. Portal Data Explorer and the Key Vault secrets blade fail from your workstation. That is intended. For support work, connect through a VNet-connected path (VPN gateway, Bastion jump host) or use the application itself. Control-plane operations (`azd provision`, role assignments) still work.
 
 ## 5. Set up Entra sign-in
 
@@ -325,6 +326,8 @@ Run this with one branch before you add more. The checklist reuses the proof of 
 - [ ] **Around branch-local midnight.** Look at the board and the wall a few minutes before and after midnight in the branch time zone (not UTC, not your own time zone). Check "today", "starting soon" and order ages.
 - [ ] **Concurrent edits.** Two recruiters fill lines on the same order at the same time. Check that both writes survive.
 - [ ] **Wall privacy.** On the paired wall, check that no client name, pay (unless the branch chose it), location, note, initials or personal task appears. Revoke the display and check that it stops.
+- [ ] **Morning whiteboard takeover.** Prepare today's whiteboard with a talking point, a priority order and a screenshot, and set the huddle window a few minutes ahead (default 07:30–08:15 branch-local). At window start, check that every paired display switches from the order board to the whiteboard within about a minute, and the screenshot shows. At window end, check that every display returns to the coded order board on its own. Repeat with **Start now** and **End**.
+- [ ] **Whiteboard media is gated.** Copy the screenshot's `/api/wall/media/<id>` request from a display (browser dev tools) and replay it with the display token after the window ends: expect `404`. Replay it without a token: expect `401` or `404`. Check that no `blob.core.windows.net` URL appears in any page or response (images are served only through the API).
 - [ ] **Network loss.** Unplug the wall's network for 2 minutes. Check that it shows "Reconnecting…" and recovers on its own.
 - [ ] **Access.** A member cannot see account contacts. A user from another branch cannot open this branch. A tenant user outside the sign-in group cannot sign in.
 - [ ] **Add branches only when the mailbox mapping is unambiguous.** One mailbox maps to one branch. Resolve brand or shared-mailbox overlaps before onboarding the next branch.
@@ -335,6 +338,7 @@ Run this with one branch before you add more. The checklist reuses the proof of 
 | --- | --- |
 | Application code | Run `deploy.yml` from the last good tag or commit (**Run workflow → Use workflow from**). Tag every production deployment (`git tag deploy-YYYYMMDD-HHMM`). |
 | Infrastructure | Check out the last good commit and run `azd provision`. Bicep deploys in incremental mode and never deletes resources; remove an unwanted resource by hand. |
+| Whiteboard image deleted by mistake | Blob soft delete keeps it 7 days: `az storage blob undelete --account-name stmedia<token> -c whiteboard-media -n <branchId>/<mediaId> --auth-mode login` from a VNet-connected path, with a data role on the container. |
 | Data | Cosmos DB continuous backup allows point-in-time restore for the last 7 days. Restore into a **new** account (portal → Cosmos DB → Point In Time Restore), check it, then change `COSMOS_ENDPOINT` on the Function App and add the Function App identity's data role on the new account. |
 | Wall HMAC secret | Key Vault keeps old secret versions. To roll back, enable the earlier version or set `AZURE_WALL_HMAC_SECRET` to its value and provision. Restart the Function App so it rereads the secret. |
 | Sign-in secret | Run `setup-entra-auth.sh --rotate`. |
@@ -353,8 +357,9 @@ Approximate US list prices at the time of writing. Check the [Azure pricing calc
 | Web PubSub | Standard_S1, 1 unit | Flat per unit (1,000 concurrent connections) | about $50 |
 | Key Vault | Standard | Operations | under $1 |
 | Storage | Standard LRS | Host leases and deployment package | under $1 |
+| Media storage | Standard LRS, Hot | Stored GB (images up to 8 MB, kept 90 days) and read operations during huddles | under $1 (a few hundred MB per branch) |
 | Log Analytics + App Insights | Pay as you go | GB ingested beyond the free allowance; 30-day retention | depends on volume; sampling is on |
-| Private networking | 6 private endpoints + 6 private DNS zones | Per endpoint-hour and per zone | about $45 to $50 |
+| Private networking | 7 private endpoints + 6 private DNS zones | Per endpoint-hour and per zone | about $50 to $55 |
 
 Savings for test environments: `ENABLE_PRIVATE_NETWORKING=false` and `AZURE_WEB_PUBSUB_SKU=Free_F1`. Do not use these settings in production.
 
@@ -371,6 +376,7 @@ Savings for test environments: `ENABLE_PRIVATE_NETWORKING=false` and `AZURE_WEB_
 | `KEY_VAULT_URI` | Key Vault URI (the API reads `wall-hmac-secret`) |
 | `TENANT_DOMAINS`, `BOOTSTRAP_ADMIN_EMAILS` | From the azd environment |
 | `FEATURE_PIPELINE`, `FEATURE_PERSONAL_MAIL` | From the azd environment |
+| `MEDIA_BLOB_ENDPOINT`, `MEDIA_CONTAINER` | Media storage blob endpoint (`https://stmedia<token>.blob.core.windows.net/`), `whiteboard-media`. Without `MEDIA_BLOB_ENDPOINT` image uploads fail with a clear error. |
 | `AzureWebJobsStorage__accountName` | Storage account (identity-based) |
 | `APPLICATIONINSIGHTS_CONNECTION_STRING`, `APPLICATIONINSIGHTS_AUTHENTICATION_STRING` | App Insights; `Authorization=AAD` |
 
@@ -386,6 +392,7 @@ To change an application setting, change the azd value and run `azd provision`. 
 | --- | --- |
 | Cosmos DB account | Cosmos DB Built-in Data Contributor (data-plane role `00000000-0000-0000-0000-000000000002`) |
 | Storage account | Storage Blob Data Owner, Storage Queue Data Contributor, Storage Table Data Contributor |
+| Media storage, container `whiteboard-media` | Storage Blob Data Contributor (`ba92f5b4-2d11-453d-a403-e96b0029c9fe`), scoped to the container |
 | Azure OpenAI | Cognitive Services OpenAI User |
 | Web PubSub | Web PubSub Service Owner |
 | Key Vault | Key Vault Secrets User |
