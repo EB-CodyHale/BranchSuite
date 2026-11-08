@@ -55,6 +55,14 @@ export function canEditUser(actor: Pick<User, 'id' | 'role'> & { perms: Permissi
 
   if (target.role === 'admin') return deny('Only an admin can change an admin.');
   if (!target.branchIds.some((id) => managed.has(id))) return deny('This person is not in a branch you manage.');
+  // The role is global: promoting (or demoting) someone who also works in a branch the actor does not
+  // manage would grant (or strip) manager powers there. Only an admin may do that.
+  if (next.role !== undefined && next.role !== target.role) {
+    const branchesAfter = next.branchIds ?? target.branchIds;
+    if (branchesAfter.some((id) => !managed.has(id))) {
+      return deny('Only an admin can change the role of someone who also works in a branch you do not manage.');
+    }
+  }
   if (next.branchIds) {
     const before = new Set(target.branchIds);
     const after = new Set(next.branchIds);

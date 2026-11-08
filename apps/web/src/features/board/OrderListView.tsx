@@ -110,7 +110,7 @@ export function OrderListView({ orders, owners }: OrderListViewProps) {
     });
 
   return (
-    <div className="overflow-x-auto rounded-lg border border-line bg-paper shadow-card">
+    <div className="relative overflow-x-auto rounded-lg border border-line bg-paper shadow-card">
       <table className="w-full border-collapse text-sm text-ink">
         <caption className="sr-only">Open orders. Select a column heading to sort; expand a row to see its lines.</caption>
         <thead>

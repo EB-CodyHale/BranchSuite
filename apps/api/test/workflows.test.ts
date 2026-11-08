@@ -12,6 +12,10 @@ describe('crypto helpers', () => {
     expect(open(secret, sealed, 'pairing:p1')).toBe('display-token');
     expect(() => open(secret, sealed, 'pairing:p2')).toThrow();
     expect(() => open(Buffer.from('another-secret-another-secret-xx'), sealed, 'pairing:p1')).toThrow();
+    // A truncated GCM tag is refused (it would otherwise weaken authentication).
+    const [iv, tag, ct] = sealed.split('.');
+    const shortTag = Buffer.from(tag!, 'base64url').subarray(0, 4).toString('base64url');
+    expect(() => open(secret, [iv, shortTag, ct].join('.'), 'pairing:p1')).toThrow();
   });
 
   it('produces uniform floats in [0, 1)', () => {

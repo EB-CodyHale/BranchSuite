@@ -13,7 +13,7 @@ export function TaskListView({ tasks }: { tasks: Task[] }) {
     return <p className="rounded-lg border border-line bg-surface px-4 py-8 text-center text-sm text-subtle">No open tasks match.</p>;
   }
   return (
-    <div className="overflow-x-auto rounded-lg border border-line bg-surface">
+    <div className="relative overflow-x-auto rounded-lg border border-line bg-surface">
       <table className="w-full min-w-[44rem] border-collapse text-sm">
         <caption className="sr-only">Open tasks</caption>
         <thead>

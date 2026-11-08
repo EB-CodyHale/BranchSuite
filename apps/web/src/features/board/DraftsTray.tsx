@@ -27,7 +27,7 @@ export function DraftsTray({ drafts, publishingId }: DraftsTrayProps) {
         <span className="rounded-sm bg-warning px-1.5 text-xs font-bold tabular-nums text-surface">{drafts.length}</span>
         <p className="text-sm text-muted max-sm:sr-only">Draft orders stay off the board and the wall until you publish them.</p>
       </div>
-      <ul className="flex gap-2 overflow-x-auto pb-1 [scrollbar-width:thin]">
+      <ul className="relative flex gap-2 overflow-x-auto pb-1 [scrollbar-width:thin]">
         {drafts.map((d) => {
           const account = accountsById.get(d.accountId);
           const title = account ? accountLabel(account, d.unitId) : 'Unknown account';

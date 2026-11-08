@@ -34,6 +34,8 @@ export function wallOrderKey(secret: Buffer, branchId: string, orderId: string):
   return createHmac('sha256', secret).update(`${branchId}:${orderId}`, 'utf8').digest('base64url').slice(0, 16);
 }
 
+const GCM_IV_BYTES = 12;
+const GCM_TAG_BYTES = 16;
 const PAIRING_KEY_INFO = 'branchsuite/pairing-token/v1';
 
 function pairingKey(secret: Buffer): Buffer {
@@ -45,8 +47,8 @@ function pairingKey(secret: Buffer): Buffer {
  * ciphertext cannot be replayed onto another record. Output: iv.tag.ciphertext (base64url).
  */
 export function seal(secret: Buffer, plaintext: string, context: string): string {
-  const iv = randomBytes(12);
-  const cipher = createCipheriv('aes-256-gcm', pairingKey(secret), iv);
+  const iv = randomBytes(GCM_IV_BYTES);
+  const cipher = createCipheriv('aes-256-gcm', pairingKey(secret), iv, { authTagLength: GCM_TAG_BYTES });
   cipher.setAAD(Buffer.from(context, 'utf8'));
   const ct = Buffer.concat([cipher.update(plaintext, 'utf8'), cipher.final()]);
   return [iv, cipher.getAuthTag(), ct].map((b) => b.toString('base64url')).join('.');
@@ -56,7 +58,9 @@ export function seal(secret: Buffer, plaintext: string, context: string): string
 export function open(secret: Buffer, sealed: string, context: string): string {
   const [iv, tag, ct] = sealed.split('.').map((p) => Buffer.from(p, 'base64url'));
   if (!iv || !tag || !ct) throw new Error('Malformed sealed value');
-  const decipher = createDecipheriv('aes-256-gcm', pairingKey(secret), iv);
+  // Only full-length tags: GCM would otherwise accept a truncated (forgeable) tag.
+  if (iv.length !== GCM_IV_BYTES || tag.length !== GCM_TAG_BYTES) throw new Error('Malformed sealed value');
+  const decipher = createDecipheriv('aes-256-gcm', pairingKey(secret), iv, { authTagLength: GCM_TAG_BYTES });
   decipher.setAAD(Buffer.from(context, 'utf8'));
   decipher.setAuthTag(tag);
   return Buffer.concat([decipher.update(ct), decipher.final()]).toString('utf8');

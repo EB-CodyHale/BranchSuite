@@ -97,6 +97,17 @@ describe('authorization matrix', () => {
     expect(manager.body.find((u: { id: string }) => u.id === 'usr_avery').email).toBeUndefined();
   });
 
+  it('stops a manager from promoting someone who also works in a branch they do not manage', async () => {
+    const app = await createTestApp();
+    // Riley is a member of B1 and B2; Morgan manages only B1. A global 'manager' role would grant B2 powers.
+    const promote = await app.call('PATCH', '/users/usr_riley', { as: 'usr_morgan', body: { role: 'manager' } });
+    expect(promote.status).toBe(403);
+    expect((await app.call('PATCH', '/users/usr_riley', { as: 'usr_morgan', body: { name: 'Riley C' } })).status).toBe(200);
+    expect((await app.call('PATCH', '/users/usr_riley', { as: 'usr_avery', body: { role: 'manager' } })).status).toBe(200);
+    // Morgan may still promote someone who works only in B1.
+    expect((await app.call('PATCH', '/users/usr_casey', { as: 'usr_morgan', body: { role: 'manager' } })).status).toBe(200);
+  });
+
   it('stops managers from touching admins or granting admin', async () => {
     const app = await createTestApp();
     expect((await app.call('PATCH', '/users/usr_avery', { as: 'usr_morgan', body: { name: 'Changed' } })).status).toBe(403);

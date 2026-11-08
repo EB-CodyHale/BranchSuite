@@ -105,6 +105,16 @@ describe('canEditUser', () => {
       expect(canEditUser(mgr, target(), { role: 'manager' })).toEqual({ ok: true });
       expect(canEditUser(mgr, target(), { branchIds: ['br_1', 'br_2'] })).toEqual({ ok: true });
     });
+    it('cannot change the role of someone who also works in an unmanaged branch (no cross-branch escalation)', () => {
+      const shared = target({ branchIds: ['br_1', 'br_3'] });
+      expect(canEditUser(mgr, shared, { role: 'manager' }).ok).toBe(false);
+      expect(canEditUser(mgr, target({ role: 'manager', branchIds: ['br_1', 'br_3'] }), { role: 'member' }).ok).toBe(false);
+      // Same role is not a change; dropping the unmanaged branch is still refused separately.
+      expect(canEditUser(mgr, shared, { role: 'member' })).toEqual({ ok: true });
+      expect(canEditUser(mgr, shared, { role: 'manager', branchIds: ['br_1'] }).ok).toBe(false);
+      // An admin still can.
+      expect(canEditUser(admin, shared, { role: 'manager' })).toEqual({ ok: true });
+    });
     it('cannot grant admin', () => {
       expect(canEditUser(mgr, target(), { role: 'admin' }).ok).toBe(false);
     });

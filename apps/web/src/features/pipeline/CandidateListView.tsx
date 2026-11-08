@@ -24,7 +24,7 @@ export function CandidateListView({ candidates }: { candidates: Candidate[] }) {
   );
 
   return (
-    <div className="overflow-x-auto rounded-lg border border-line bg-paper shadow-card">
+    <div className="relative overflow-x-auto rounded-lg border border-line bg-paper shadow-card">
       <table className="w-full min-w-[46rem] border-collapse text-sm">
         <caption className="sr-only">Candidates, {rows.length} shown</caption>
         <thead>

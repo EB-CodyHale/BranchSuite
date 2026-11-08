@@ -81,7 +81,7 @@ export function PeopleSection() {
       ) : rows.length === 0 ? (
         <EmptyState title="Nobody here yet" description="Add the recruiters and managers who work this branch." />
       ) : (
-        <div className="overflow-x-auto rounded-lg border border-line bg-surface shadow-card">
+        <div className="relative overflow-x-auto rounded-lg border border-line bg-surface shadow-card">
           <table className="w-full min-w-[44rem] text-sm">
             <caption className="sr-only">People in {branch?.name}</caption>
             <thead>
