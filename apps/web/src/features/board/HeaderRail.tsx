@@ -28,7 +28,7 @@ export function HeaderRail({ scopeName, metrics, quick, onQuick, canCreate, onCr
   return (
     <div className="flex flex-col gap-3">
       <div className="flex flex-wrap items-end gap-x-4 gap-y-2">
-        <div className="min-w-0 flex-1">
+        <div className="min-w-0 flex-1 basis-48">
           <h1 className="font-display text-[1.75rem] font-bold leading-none tracking-tight sm:text-3xl">Job order board</h1>
           <p className="mt-1 truncate text-sm font-semibold text-muted tabular-nums" aria-live="polite">
             {scopeName}

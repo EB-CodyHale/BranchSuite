@@ -11,7 +11,7 @@ export function SectionHeader({ title, description, actions, branchScoped = fals
   const { branch } = useSetupBranch();
   return (
     <div className="mb-4 flex flex-wrap items-end gap-x-4 gap-y-2">
-      <div className="min-w-0 flex-1">
+      <div className="min-w-0 flex-1 basis-48">
         <h2 className="font-display text-2xl font-bold leading-tight tracking-tight">{title}</h2>
         {description ? <p className="mt-0.5 max-w-prose text-sm text-muted">{description}</p> : null}
         {branchScoped && branch ? (

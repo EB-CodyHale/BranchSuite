@@ -36,9 +36,12 @@ const deny = (reason: string): EditResult => ({ ok: false, reason });
  * Managers may not remove branches they don't manage from a target. Nobody may change their own role.
  * `target` null means create; a manager must then name at least one branch.
  */
-export function canEditUser(actor: Pick<User, 'id' | 'role'> & { perms: Permissions }, target: Pick<User, 'id' | 'role' | 'branchIds'> | null, next: { role?: User['role']; branchIds?: string[] }): EditResult {
+export function canEditUser(actor: Pick<User, 'id' | 'role'> & { perms: Permissions }, target: Pick<User, 'id' | 'role' | 'branchIds'> | null, next: { role?: User['role']; branchIds?: string[]; active?: boolean }): EditResult {
   if (target !== null && target.id === actor.id && next.role !== undefined && next.role !== target.role) {
     return deny('You cannot change your own role.');
+  }
+  if (target !== null && target.id === actor.id && next.active === false) {
+    return deny('You cannot deactivate yourself.');
   }
   if (actor.role === 'admin' && actor.perms.isAdmin) return { ok: true };
   if (actor.role !== 'manager') return deny('Only managers and admins can manage people.');
@@ -62,6 +65,10 @@ export function canEditUser(actor: Pick<User, 'id' | 'role'> & { perms: Permissi
     if (branchesAfter.some((id) => !managed.has(id))) {
       return deny('Only an admin can change the role of someone who also works in a branch you do not manage.');
     }
+  }
+  // Deactivation locks the person out of every branch, so it follows the same rule as a role change.
+  if (next.active !== undefined && target.branchIds.some((id) => !managed.has(id))) {
+    return deny('Only an admin can deactivate or reactivate someone who also works in a branch you do not manage.');
   }
   if (next.branchIds) {
     const before = new Set(target.branchIds);

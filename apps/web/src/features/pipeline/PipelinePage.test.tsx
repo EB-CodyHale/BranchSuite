@@ -15,6 +15,16 @@ function columnOf(stageLabel: string) {
 }
 
 describe('pipeline board', () => {
+  it('keeps the stage scroller a positioned containing block so sr-only column labels cannot widen the page', async () => {
+    renderPipeline({ board: boardOf([order()]), candidates: { br_north: [candidate()] } });
+    const scroller = await screen.findByRole('region', { name: 'Pipeline stages' });
+    // jsdom has no layout: assert the class that makes the absolutely positioned sr-only spans
+    // inside each column anchor to (and be clipped by) this overflow-x scroller instead of <body>.
+    expect(scroller.className.split(/\s+/)).toContain('relative');
+    expect(scroller.className).toContain('overflow-x-auto');
+    expect(scroller.querySelector('.sr-only')).toBeTruthy();
+  });
+
   it('renders stage columns with counts and a candidate card with its linked order and line status', async () => {
     const jamie = candidate({ stage: 'screened', accountId: 'acc_lakeside', orderId: 'ord_1', openingId: 'op_1', startDate: '2026-03-03' });
     const held = order({ openings: [line('op_1', { state: 'tentative', initials: 'JL', candidateId: 'cand_jamie' }), line('op_2')] });

@@ -335,7 +335,8 @@ export class DocumentRepo implements Repo {
   // ---------- media ----------
   getMedia(branchId: string, id: string) { return this.getOne<Media>(K.media, branchId, id); }
   findMediaBySha256(branchId: string, sha256: string) {
-    return this.first<Media>(K.media, branchId, [{ field: 'sha256', op: '=', value: sha256 }]);
+    // Newest first: an older copy of the same bytes may be close to its retention expiry.
+    return this.list<Media>(K.media, branchId, [{ field: 'sha256', op: '=', value: sha256 }], { orderBy: { field: 'uploadedAt', desc: true }, limit: 1 }).then((r) => r[0] ?? null);
   }
   createMedia(media: Media) { return this.insert(K.media, media, media.branchId); }
 

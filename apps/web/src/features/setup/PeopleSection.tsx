@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react';
 import { ROLE_LABELS } from '../../app/AppShell.js';
 import { useMeContext } from '../../app/MeContext.js';
 import { isFullUser, useUpdateUser, useUsers, type RosterEntry } from '../../lib/queries.js';
+import { branchListLabel } from './peopleModel.js';
 import { Badge } from '../../ui/Badge.js';
 import { Button } from '../../ui/Button.js';
 import { ToggleChip } from '../../ui/Chip.js';
@@ -121,7 +122,7 @@ export function PeopleSection() {
                     </td>
                     <td className="px-3 py-2">{ROLE_LABELS[p.role]}</td>
                     <td className="max-w-[14rem] px-3 py-2">
-                      <span className="line-clamp-2">{p.branchIds.map((id) => branchName.get(id) ?? id).join(', ')}</span>
+                      <span className="line-clamp-2">{branchListLabel(p.branchIds, branchName)}</span>
                     </td>
                     <td className="px-3 py-2">
                       <span className="flex flex-wrap gap-1">

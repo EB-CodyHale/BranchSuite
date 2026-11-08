@@ -46,7 +46,7 @@ export function InboxHeader({ scopeName, view, onView, showViews, date, today, o
   return (
     <div className="flex flex-col gap-3">
       <div className="flex flex-wrap items-end gap-x-4 gap-y-3">
-        <div className="min-w-0 flex-1">
+        <div className="min-w-0 flex-1 basis-48">
           <h1 className="font-display text-[1.75rem] font-bold leading-none tracking-tight sm:text-3xl">Inbox</h1>
           <p className="mt-1 truncate text-sm font-semibold text-muted">{view === 'personal' ? 'Personal · only you' : scopeName}</p>
         </div>

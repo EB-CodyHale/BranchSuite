@@ -137,6 +137,10 @@ export function registerOrderRoutes(router: Router): void {
       return ok(
         await commitOrderChange(ctx, caller, branch.id, current.id, 'update', `Edited ${Object.keys(input).join(', ') || 'nothing'}`, (order, nowIso) => {
           requireStatus(order, ['draft', 'active', 'paused'], 'edited');
+          // A linked candidate carries the order's account; moving the order would leave it stale.
+          if (accountId !== order.accountId && order.openings.some((o) => o.candidateId !== null)) {
+            throw conflict('Release the pipeline candidates on this order before moving it to another account.');
+          }
           return stamp({ ...order, ...input, accountId, unitId }, caller.user.id, nowIso);
         }),
       );
@@ -176,6 +180,29 @@ export function registerOrderRoutes(router: Router): void {
       const branch = readableBranch(caller, req.params.b!);
       const input = parse(zOpeningUpdateInput, req.body);
       const summary = input.state === 'open' ? 'Cleared a line' : `Marked a line ${input.state}${input.initials ? ` (${input.initials})` : ''}`;
+      const orderId = req.params.id!;
+      const openingId = req.params.oid!;
+      // A start date written on a pipeline candidate's line is also the candidate's start date: write
+      // both in one batch, or the next stage change would put the candidate's old date back on the line.
+      const holderId = input.startDate !== undefined ? (await ctx.repo.getOrder(branch.id, orderId))?.openings.find((o) => o.id === openingId)?.candidateId : null;
+      const holder = holderId ? await ctx.repo.getCandidate(branch.id, holderId) : null;
+      if (holder && holder.orderId === orderId && holder.openingId === openingId) {
+        const order = await ctx.repo.mutatePipeline<Order>(branch.id, holder.id, async (candidate, loadOrder) => {
+          const current = await loadOrder(orderId);
+          if (!current) throw new HttpError(404, 'not_found', 'No such order.');
+          const nowIso = ctx.now().toISOString();
+          const next = applyOpeningUpdate(current, openingId, input, caller.user.id, nowIso);
+          const line = next.openings.find((o) => o.id === openingId);
+          if (!line || line.candidateId !== candidate.id || candidate.orderId !== orderId || candidate.openingId !== openingId) {
+            throw conflict('Someone else changed this line at the same time. Refresh and try again.');
+          }
+          const synced = candidate.startDate === line.startDate ? candidate : { ...candidate, startDate: line.startDate, updatedAt: nowIso, updatedBy: caller.user.id };
+          return { candidate: synced, orders: [next], result: next };
+        });
+        await audit(ctx, caller.user.id, { branchId: branch.id, entity: 'order', entityId: orderId, action: 'line', summary });
+        notify(ctx, branch.id, ['orders', 'candidates'], { wall: true });
+        return ok(order);
+      }
       return ok(
         await commitOrderChange(ctx, caller, branch.id, req.params.id!, 'line', summary, (order, nowIso) =>
           applyOpeningUpdate(order, req.params.oid!, input, caller.user.id, nowIso),

@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { jsonResponse } from '../../test/fixtures.js';
 import { MarkerPicker } from './MarkerPicker.js';
 import { PeopleSection } from './PeopleSection.js';
-import { assignableRoles, duplicateInitials, suggestInitials, validatePerson } from './peopleModel.js';
+import { assignableRoles, branchListLabel, duplicateInitials, suggestInitials, validatePerson } from './peopleModel.js';
 import { PersonDialog } from './PersonDialog.js';
 import { adminMe, managerMe, renderSetup, rosterUser } from './testHarness.js';
 
@@ -147,5 +147,14 @@ describe('PeopleSection', () => {
     expect(within(rows[1]!).getByText('Red')).toBeTruthy();
     expect(within(rows[1]!).getByText('Team member')).toBeTruthy();
     expect(within(rows[1]!).getByRole('button', { name: 'Edit Blake Ortiz' })).toBeTruthy();
+  });
+});
+
+describe('branchListLabel', () => {
+  it('names visible branches and counts the rest instead of printing raw ids', () => {
+    const names = new Map([['b1', 'Riverside, IL']]);
+    expect(branchListLabel(['b1'], names)).toBe('Riverside, IL');
+    expect(branchListLabel(['b1', 'branch-1002'], names)).toBe('Riverside, IL, +1 other branch');
+    expect(branchListLabel(['x', 'y'], names)).toBe('+2 other branches');
   });
 });

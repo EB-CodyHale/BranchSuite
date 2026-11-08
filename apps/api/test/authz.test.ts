@@ -108,6 +108,18 @@ describe('authorization matrix', () => {
     expect((await app.call('PATCH', '/users/usr_casey', { as: 'usr_morgan', body: { role: 'manager' } })).status).toBe(200);
   });
 
+  it('stops a manager from deactivating someone who also works in a branch they do not manage', async () => {
+    const app = await createTestApp();
+    // Riley works in B1 and B2; Morgan manages only B1. Deactivation would lock Riley out of B2 too.
+    expect((await app.call('PATCH', '/users/usr_riley', { as: 'usr_morgan', body: { active: false } })).status).toBe(403);
+    // Sending the unchanged flag with another edit is not a deactivation.
+    expect((await app.call('PATCH', '/users/usr_riley', { as: 'usr_morgan', body: { name: 'Riley C', active: true } })).status).toBe(200);
+    expect((await app.call('PATCH', '/users/usr_riley', { as: 'usr_avery', body: { active: false } })).status).toBe(200);
+    // Someone who works only in Morgan's branch can be deactivated by Morgan; nobody can deactivate themselves.
+    expect((await app.call('PATCH', '/users/usr_casey', { as: 'usr_morgan', body: { active: false } })).status).toBe(200);
+    expect((await app.call('PATCH', '/users/usr_morgan', { as: 'usr_morgan', body: { active: false } })).status).toBe(403);
+  });
+
   it('stops managers from touching admins or granting admin', async () => {
     const app = await createTestApp();
     expect((await app.call('PATCH', '/users/usr_avery', { as: 'usr_morgan', body: { name: 'Changed' } })).status).toBe(403);
@@ -166,5 +178,42 @@ describe('pipeline through the API', () => {
     expect(archived.body.orders[0].openings.some((o: { candidateId: string | null }) => o.candidateId === created.body.id)).toBe(false);
     const released = await app.repo.getOrder(B1, 'ord_o2');
     expect(released!.openings.some((o) => o.candidateId === created.body.id)).toBe(false);
+  });
+});
+
+describe('order lines held by pipeline candidates', () => {
+  async function linkedCandidate(app: Awaited<ReturnType<typeof createTestApp>>) {
+    const created = await app.call('POST', `/branches/${B1}/candidates`, { as: 'usr_casey', body: { firstName: 'Quinn', lastName: 'Ivers' } });
+    const linked = await app.call('POST', `/branches/${B1}/candidates/${created.body.id}/link`, { as: 'usr_casey', body: { orderId: 'ord_o2' } });
+    expect(linked.status).toBe(200);
+    const line = linked.body.orders[0].openings.find((o: { candidateId: string | null }) => o.candidateId === created.body.id);
+    return { candidateId: created.body.id as string, lineId: line.id as string };
+  }
+
+  it('keeps the candidate start date in step when a recruiter dates the line, so a stage change does not undo it', async () => {
+    const app = await createTestApp();
+    const { candidateId, lineId } = await linkedCandidate(app);
+    const dated = await app.call('PUT', `/branches/${B1}/orders/ord_o2/openings/${lineId}`, { as: 'usr_casey', body: { state: 'tentative', startDate: '2026-03-16' } });
+    expect(dated.status).toBe(200);
+    expect((await app.repo.getCandidate(B1, candidateId))!.startDate).toBe('2026-03-16');
+
+    const accepted = await app.call('POST', `/branches/${B1}/candidates/${candidateId}/stage`, { as: 'usr_casey', body: { stage: 'accepted' } });
+    expect(accepted.status).toBe(200);
+    const line = (await app.repo.getOrder(B1, 'ord_o2'))!.openings.find((o) => o.id === lineId)!;
+    expect(line).toMatchObject({ state: 'committed', startDate: '2026-03-16', candidateId });
+  });
+
+  it('refuses to move an order to another account while a candidate holds one of its lines', async () => {
+    const app = await createTestApp();
+    const { candidateId } = await linkedCandidate(app);
+    const order = (await app.repo.getOrder(B1, 'ord_o2'))!;
+    const other = (await app.repo.listAccounts(B1)).find((a) => a.id !== order.accountId && a.active && a.reserved === null)!;
+    const moved = await app.call('PATCH', `/branches/${B1}/orders/ord_o2`, { as: 'usr_morgan', body: { accountId: other.id } });
+    expect(moved.status).toBe(409);
+    expect((await app.repo.getOrder(B1, 'ord_o2'))!.accountId).toBe(order.accountId);
+    expect((await app.repo.getCandidate(B1, candidateId))!.accountId).toBe(order.accountId);
+
+    // Other edits still work.
+    expect((await app.call('PATCH', `/branches/${B1}/orders/ord_o2`, { as: 'usr_morgan', body: { note: 'Steel toes' } })).status).toBe(200);
   });
 });

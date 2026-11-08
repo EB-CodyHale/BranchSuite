@@ -211,6 +211,21 @@ describe('whiteboard media upload', () => {
     expect(jpg.body).toMatchObject({ contentType: 'image/jpeg', width: 3, height: 2 });
   });
 
+  it('does not hand back an old copy that is about to expire', async () => {
+    const app = await createTestApp();
+    const first = await upload(app, png(40, 20), 'image/png');
+    expect(first.status).toBe(201);
+    // 80 days later the first copy has 10 days of retention left (TTL and blob lifecycle run from the first upload).
+    app.clock.now = new Date(NOW.getTime() + 80 * 86_400_000);
+    const later = await upload(app, png(40, 20), 'image/png');
+    expect(later.status).toBe(201);
+    expect(later.body.id).not.toBe(first.body.id);
+    // The fresh copy is the one reused from now on.
+    const again = await upload(app, png(40, 20), 'image/png');
+    expect(again.status).toBe(200);
+    expect(again.body.id).toBe(later.body.id);
+  });
+
   it('is manager-only', async () => {
     const app = await createTestApp();
     expect((await upload(app, png(), 'image/png', 'usr_casey')).status).toBe(403);

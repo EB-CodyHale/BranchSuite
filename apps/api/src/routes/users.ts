@@ -25,10 +25,14 @@ function requireKnownBranches(caller: Caller, branchIds: string[]): void {
   if (unknown.length > 0) throw badRequest(`Unknown branch: ${unknown.join(', ')}.`);
 }
 
-function check(caller: Caller, target: User | null, next: { role?: User['role']; branchIds?: string[] }): void {
+function check(caller: Caller, target: User | null, next: { role?: User['role']; branchIds?: string[]; active?: boolean }): void {
   const verdict = canEditUser({ id: caller.user.id, role: caller.user.role, perms: caller.perms }, target, next);
   if (!verdict.ok) throw forbidden(verdict.reason);
 }
+
+/** The requested `active` value only when it actually changes (an unchanged flag in a PATCH is not a deactivation). */
+const activeChange = (active: boolean | undefined, target: User): boolean | undefined =>
+  active !== undefined && active !== target.active ? active : undefined;
 
 /** Audit partition for a user event: their first branch, else the global scope. */
 const auditScope = (user: User) => user.branchIds[0] ?? GLOBAL_SCOPE;
@@ -88,11 +92,11 @@ export function registerUserRoutes(router: Router): void {
       const target = await ctx.repo.getUser(req.params.id!);
       if (!target || !visibleUsers(caller, [target]).length) throw notFound('No such person.');
       if (input.branchIds) requireKnownBranches(caller, input.branchIds);
-      check(caller, target, { role: input.role, branchIds: input.branchIds });
+      check(caller, target, { role: input.role, branchIds: input.branchIds, active: activeChange(input.active, target) });
       if (target.id === caller.user.id && input.active === false) throw badRequest('You cannot deactivate yourself.');
       const user = await ctx.repo.updateUser(target.id, (current) => {
         // Re-check against the current version: role or branches may have changed since the read.
-        check(caller, current, { role: input.role, branchIds: input.branchIds });
+        check(caller, current, { role: input.role, branchIds: input.branchIds, active: activeChange(input.active, current) });
         return { ...current, ...input, updatedAt: ctx.now().toISOString(), updatedBy: caller.user.id };
       });
       await audit(ctx, caller.user.id, { branchId: auditScope(user), entity: 'user', entityId: user.id, action: 'update', summary: `Edited ${user.name}: ${Object.keys(input).join(', ')}` });

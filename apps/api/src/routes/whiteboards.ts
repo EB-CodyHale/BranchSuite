@@ -42,6 +42,8 @@ import { buildWhiteboardView, imageMediaIds, loadMedia } from './whiteboardView.
 
 const MAX_LIST_DAYS = 62;
 const FILE_NAME_HEADER = 'x-file-name';
+/** An identical upload is reused only while it is younger than half the retention period. */
+const MEDIA_REUSE_MAX_AGE_MS = (WHITEBOARD_LIMITS.mediaRetentionDays / 2) * 86_400_000;
 
 type AssignmentItem = Extract<WhiteboardBlock, { kind: 'assignments' }>['items'][number];
 
@@ -370,7 +372,10 @@ export function registerWhiteboardRoutes(router: Router): void {
 
       const sha256 = createHash('sha256').update(raw).digest('hex');
       const duplicate = await ctx.repo.findMediaBySha256(branch.id, sha256);
-      if (duplicate) return ok(duplicate);
+      // Reuse an identical upload only while it has most of its retention left: metadata (TTL) and
+      // bytes (blob lifecycle) expire a fixed time after the FIRST upload, so handing back an old copy
+      // would make today's image vanish from the board within days.
+      if (duplicate && ctx.now().getTime() - Date.parse(duplicate.uploadedAt) < MEDIA_REUSE_MAX_AGE_MS) return ok(duplicate);
 
       const media: Media = zMedia.parse({
         id: newId('med'),

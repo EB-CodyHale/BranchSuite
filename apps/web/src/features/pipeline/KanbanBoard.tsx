@@ -57,7 +57,7 @@ export function KanbanBoard({ candidates }: KanbanBoardProps) {
   // `relative` makes the scroller the containing block for the columns' absolutely positioned sr-only
   // labels. Without it they anchor to <body>, escape the overflow clip and widen the whole page.
   return (
-    <div className="relative -mx-4 overflow-x-auto px-4 pb-2 sm:-mx-5 sm:px-5" role="region" aria-label="Pipeline stages">
+    <div className="relative -mx-4 overflow-x-auto px-4 pb-2 sm:-mx-5 sm:px-5 xl:mr-0 xl:pr-0" role="region" aria-label="Pipeline stages">
       <div className="flex min-h-[24rem] snap-x snap-mandatory gap-3 sm:snap-none">
         {ACTIVE_STAGES.map((s) => (
           <StageColumn key={s.id} {...columnProps(s.id)} count={groups.get(s.id)?.length ?? 0}>

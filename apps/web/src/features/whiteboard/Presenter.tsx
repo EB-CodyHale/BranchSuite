@@ -104,7 +104,7 @@ export function Presenter({ view, branchName, timeZone, loadMedia, onClose }: Pr
         <IconButton label="Previous page" size="sm" disabled={current === 0} onClick={() => setPage(Math.max(0, current - 1))}>
           <ChevronLeft />
         </IconButton>
-        <span className="font-semibold tabular-nums text-fg" aria-live="polite">
+        <span className="whitespace-nowrap font-semibold tabular-nums text-fg" aria-live="polite">
           Page {current + 1} of {pageCount}
         </span>
         <IconButton label="Next page" size="sm" disabled={current >= pageCount - 1} onClick={() => setPage(Math.min(pageCount - 1, current + 1))}>

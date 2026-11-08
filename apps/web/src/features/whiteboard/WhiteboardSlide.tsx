@@ -16,7 +16,8 @@ import { MarkerDot } from '../../ui/MarkerDot.js';
 import { WallGlyph, wallCodeLabel } from '../../ui/WallGlyph.js';
 import { clockParts, useNow } from '../wall/clock.js';
 import { useElementSize, useFontsReady, usePrefersReducedMotion } from '../wall/hooks.js';
-import { burnInOffset, clampPage, columnsFor, columnWidth, gapPx, paginate, wallFontPx } from '../wall/layout.js';
+import { burnInOffset, clampPage, columnsFor, columnWidth, gapPx, wallFontPx } from '../wall/layout.js';
+import { packColumns } from './pack.js';
 import { shiftText } from '../wall/WallTile.js';
 import { MediaImage } from './media.js';
 import { longDate, noteSegments, windowLabel } from './model.js';
@@ -92,8 +93,8 @@ export function WhiteboardSlide({
   }, [measurable, blocks, colWidth, fontPx, fontsTick, imageMax]);
 
   const pages = useMemo(() => {
-    if (!heights || heights.length !== blocks.length) return [blocks.map((_, i) => i)];
-    return paginate(heights, columns, stage.height, gap);
+    if (!heights || heights.length !== blocks.length) return packColumns(blocks.map(() => 0), columns, 0, gap);
+    return packColumns(heights, columns, stage.height, gap);
   }, [heights, blocks, columns, stage.height, gap]);
   const pageCount = pages.length;
 
@@ -153,22 +154,27 @@ export function WhiteboardSlide({
                 </div>
               </div>
             ) : (
-              <ul
+              <div
                 key={page}
+                role="list"
                 aria-label={pageCount > 1 ? `Whiteboard, page ${page + 1} of ${pageCount}` : 'Whiteboard'}
-                className={cx('grid content-start', !reducedMotion && pageCount > 1 && 'wall-page-enter')}
-                style={{ gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))`, gap: `${gap}px` }}
+                className={cx('grid content-start items-start', !reducedMotion && pageCount > 1 && 'wall-page-enter')}
+                style={{ gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))`, columnGap: `${gap}px` }}
                 data-whiteboard-page={page}
               >
-                {visible.map((i) => {
-                  const b = blocks[i]!;
-                  return (
-                    <li key={b.id} className="min-w-0">
-                      <WhiteboardBlockCard block={b} imageMaxHeight={imageMax} />
-                    </li>
-                  );
-                })}
-              </ul>
+                {visible.map((column, c) => (
+                  <div key={c} className="flex min-w-0 flex-col" style={{ gap: `${gap}px` }}>
+                    {column.map((i) => {
+                      const b = blocks[i]!;
+                      return (
+                        <div role="listitem" key={b.id} className="min-w-0">
+                          <WhiteboardBlockCard block={b} imageMaxHeight={imageMax} />
+                        </div>
+                      );
+                    })}
+                  </div>
+                ))}
+              </div>
             )}
             {measurable ? (
               <div ref={measureRef} aria-hidden="true" inert className="pointer-events-none invisible absolute left-0 top-0" style={{ width: `${colWidth}px` }}>
@@ -182,7 +188,14 @@ export function WhiteboardSlide({
           </div>
         </div>
         {pageCount > 1 ? (
-          <footer className="flex items-center justify-end gap-[0.6em] border-t border-line bg-surface-2 px-[1.2em] py-[0.45em] text-[0.95em]" data-whiteboard-pager="">
+          // Controlled (presenter): the host draws its own pager over this strip, so the strip keeps its
+          // height (content never slides under the host's pager) but its text is hidden to avoid two
+          // overlapping "Page n of m" readouts.
+          <footer
+            aria-hidden={controlled || undefined}
+            className={cx('flex items-center justify-end gap-[0.6em] border-t border-line bg-surface-2 px-[1.2em] py-[0.45em] text-[0.95em]', controlled && '[&>*]:invisible')}
+            data-whiteboard-pager=""
+          >
             <span className="font-semibold tabular-nums">
               Page {page + 1} of {pageCount}
             </span>

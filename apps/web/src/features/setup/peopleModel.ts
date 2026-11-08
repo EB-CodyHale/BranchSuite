@@ -95,3 +95,17 @@ const FIELD_MESSAGES: Partial<Record<keyof PersonForm, string>> = {
   branchIds: 'Choose at least one branch.',
   marker: 'Pick a marker color.',
 };
+
+/**
+ * Names of a person's branches for the roster. Branches the viewer cannot see have no name here; they
+ * are counted ("+1 other branch") rather than shown as raw ids.
+ */
+export function branchListLabel(branchIds: readonly string[], names: ReadonlyMap<string, string>): string {
+  const known = branchIds.flatMap((id) => {
+    const name = names.get(id);
+    return name ? [name] : [];
+  });
+  const hidden = branchIds.length - known.length;
+  if (hidden > 0) known.push(`+${hidden} other ${hidden === 1 ? 'branch' : 'branches'}`);
+  return known.join(', ');
+}

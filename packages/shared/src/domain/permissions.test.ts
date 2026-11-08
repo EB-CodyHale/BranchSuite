@@ -77,6 +77,15 @@ describe('canEditUser', () => {
     expect(canEditUser(mgr, { id: 'usr_mgr', role: 'manager', branchIds: ['br_1'] }, { role: 'manager' }).ok).toBe(true);
   });
 
+  it('deactivation needs every one of the target\'s branches to be managed, and nobody deactivates themselves', () => {
+    expect(canEditUser(mgr, target({ branchIds: ['br_1', 'br_2'] }), { active: false }).ok).toBe(true);
+    expect(canEditUser(mgr, target({ branchIds: ['br_1', 'br_3'] }), { active: false }).ok).toBe(false);
+    expect(canEditUser(mgr, target({ branchIds: ['br_1', 'br_3'] }), { active: true }).ok).toBe(false);
+    expect(canEditUser(admin, target({ branchIds: ['br_1', 'br_3'] }), { active: false }).ok).toBe(true);
+    expect(canEditUser(mgr, { id: 'usr_mgr', role: 'manager', branchIds: ['br_1'] }, { active: false }).ok).toBe(false);
+    expect(canEditUser(admin, { id: 'usr_admin', role: 'admin', branchIds: [] }, { active: false }).ok).toBe(false);
+  });
+
   it('members cannot manage people', () => {
     expect(canEditUser(member, null, { role: 'member', branchIds: ['br_1'] }).ok).toBe(false);
     expect(canEditUser(member, target(), {}).ok).toBe(false);

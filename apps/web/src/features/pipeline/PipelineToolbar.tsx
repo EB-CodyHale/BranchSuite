@@ -51,8 +51,8 @@ export function PipelineToolbar({ filters, onChange, onClear, recruiters, accoun
           inputClassName="pl-8"
         />
       </div>
-      <Select label="Recruiter" hideLabel value={filters.recruiter} options={recruiterOptions} onChange={(e) => onChange({ recruiter: e.target.value })} className="min-w-0 flex-1 sm:w-48 sm:flex-none" />
-      <Select label="Account" hideLabel value={filters.account} options={accountOptions} onChange={(e) => onChange({ account: e.target.value })} className="min-w-0 flex-1 sm:w-52 sm:flex-none" />
+      <Select label="Recruiter" hideLabel value={filters.recruiter} options={recruiterOptions} onChange={(e) => onChange({ recruiter: e.target.value })} className="min-w-0 flex-1 basis-32 sm:basis-auto sm:w-48 sm:flex-none" />
+      <Select label="Account" hideLabel value={filters.account} options={accountOptions} onChange={(e) => onChange({ account: e.target.value })} className="min-w-0 flex-1 basis-32 sm:basis-auto sm:w-52 sm:flex-none" />
       <Checkbox label="Show archived" checked={filters.showArchived} onChange={(e) => onChange({ showArchived: e.target.checked })} className="h-9 items-center" />
       {isFiltered(filters) ? (
         <Button size="sm" variant="ghost" icon={<X aria-hidden="true" className="size-4" />} onClick={onClear} className="h-9">
