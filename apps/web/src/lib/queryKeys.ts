@@ -10,6 +10,10 @@ export type CandidateStatus = 'active' | 'archived';
 
 const ids = (list: readonly string[]): string[] => [...new Set(list)].sort();
 
+/** Device-auth headers for the lobby wall (no staff session). */
+export const DISPLAY_TOKEN_HEADER = 'x-display-token';
+export const PAIRING_SECRET_HEADER = 'x-pairing-secret';
+
 export const keys = {
   me: () => ['me'] as const,
   meMail: () => ['me', 'mail'] as const,
@@ -41,10 +45,18 @@ export const keys = {
 
   wallRoot: () => ['wall'] as const,
   wallLegend: (branchId: string) => ['wall', branchId, 'legend'] as const,
-  wallPreview: (branchId: string) => ['wall', branchId, 'preview'] as const,
+  /** Board mode keeps the original 3-part key; the whiteboard preview adds a 4th part (prefix invalidation covers both). */
+  wallPreview: (branchId: string, mode: 'board' | 'whiteboard' = 'board') =>
+    mode === 'board' ? (['wall', branchId, 'preview'] as const) : (['wall', branchId, 'preview', 'whiteboard'] as const),
   /** Device-side feed; one display token per device, so no branch id in the key. */
   wallFeed: () => ['wallDevice', 'feed'] as const,
   wallPairPoll: (pairingId: string) => ['wallDevice', 'pair', pairingId] as const,
+
+  /** Morning whiteboards of a branch: every list window and every day share this prefix. */
+  whiteboardRoot: (branchId: string) => ['whiteboard', branchId] as const,
+  whiteboards: (branchId: string, from: string, to: string) => ['whiteboard', branchId, 'list', from, to] as const,
+  whiteboardDayRoot: (branchId: string) => ['whiteboard', branchId, 'day'] as const,
+  whiteboard: (branchId: string, date: string) => ['whiteboard', branchId, 'day', date] as const,
 
   devUsers: () => ['devUsers'] as const,
 };

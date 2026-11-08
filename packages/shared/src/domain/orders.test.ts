@@ -13,6 +13,7 @@ import {
   newOpening,
   openingCounts,
   orderAgeDays,
+  orderAgeOn,
   payText,
   removeOpening,
   scheduleText,
@@ -188,6 +189,14 @@ describe('boardMetrics', () => {
   it('skips date-based metrics for branches missing from the map', () => {
     const os = [order({ branchId: 'br_x', createdAt: '2026-01-01T00:00:00Z', openings: lines({ state: 'committed', initials: 'AB', startDate: TODAY }, {}) })];
     expect(boardMetrics(os, { br_1: TODAY })).toEqual({ orders: 1, openings: 2, toFill: 1, tentative: 0, startingSoon: 0, aging: 0 });
+  });
+
+  it('counts aging in the branch time zone so it agrees with orderAgeOn', () => {
+    // 05:30Z on Mar 4 is still Mar 3 in Chicago: 7 branch-local days before Mar 10, but only 6 UTC days.
+    const os = [order({ createdAt: '2026-03-04T05:30:00Z', openings: lines({}) })];
+    expect(boardMetrics(os, '2026-03-10').aging).toBe(0);
+    expect(boardMetrics(os, '2026-03-10', { br_1: 'America/Chicago' }).aging).toBe(1);
+    expect(orderAgeOn(os[0]!, 'America/Chicago', '2026-03-10')).toBe(7);
   });
 });
 

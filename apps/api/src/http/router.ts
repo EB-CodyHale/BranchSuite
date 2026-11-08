@@ -52,7 +52,8 @@ export class Router {
     } catch (err) {
       res = toErrorResponse(err, (message, data) => ctx.log.error(message, { path: req?.path, method: req?.method, data }));
     }
-    return { ...res, headers: { ...SECURITY_HEADERS, ...(res.body === undefined ? {} : { 'content-type': 'application/json; charset=utf-8' }), ...res.headers } };
+    const json = res.body !== undefined && !Buffer.isBuffer(res.body);
+    return { ...res, headers: { ...SECURITY_HEADERS, ...(json ? { 'content-type': 'application/json; charset=utf-8' } : {}), ...res.headers } };
   }
 
   private async dispatch(req: ApiRequest, ctx: AppContext): Promise<ApiResponse> {
@@ -95,4 +96,10 @@ function match(pattern: string[], actual: string[]): Record<string, string> | nu
     }
   }
   return params;
+}
+
+/** Serialize a router response body for a host adapter: Buffers pass through, everything else is JSON. */
+export function serializeBody(body: unknown): Buffer | string | undefined {
+  if (body === undefined) return undefined;
+  return Buffer.isBuffer(body) ? body : JSON.stringify(body);
 }

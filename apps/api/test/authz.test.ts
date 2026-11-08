@@ -151,7 +151,8 @@ describe('pipeline through the API', () => {
     expect(stored!.openings.find((o) => o.candidateId === created.body.id)!.state).toBe('committed');
 
     const archived = await app.call('POST', `/branches/${B1}/candidates/${created.body.id}/archive`, { as: 'usr_casey' });
-    expect(archived.body).toMatchObject({ status: 'archived', orderId: null });
+    expect(archived.body.candidate).toMatchObject({ status: 'archived', orderId: null });
+    expect(archived.body.orders[0].openings.some((o: { candidateId: string | null }) => o.candidateId === created.body.id)).toBe(false);
     const released = await app.repo.getOrder(B1, 'ord_o2');
     expect(released!.openings.some((o) => o.candidateId === created.body.id)).toBe(false);
   });

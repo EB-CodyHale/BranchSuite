@@ -5,7 +5,7 @@
  * - Graph: HttpGraphClient (managed identity) when DATA_MODE=cosmos; none in memory mode unless a
  *   GraphClient is injected (tests, dev scripts). Without Graph, syncAll logs and returns zeros.
  * - Classifier: MockClassifier when AI_MODE=mock; Azure OpenAI (managed identity) otherwise.
- *   AZURE_OPENAI_API_VERSION overrides the default API version.
+ *   config.azureOpenAiApiVersion (AZURE_OPENAI_API_VERSION) overrides the default API version.
  * SDK clients are created on first use so cold starts stay cheap.
  */
 import type { Config } from '../config.js';
@@ -26,6 +26,9 @@ export interface MailService {
   requestSync(mailboxId: string): Promise<void>;
 }
 
+/** Messages a manual "Sync now" processes inside the request before leaving the rest to the timer. */
+export const MANUAL_SYNC_MAX_MESSAGES = 25;
+
 export interface MailServiceDeps {
   config: Config;
   repo: Repo;
@@ -45,7 +48,7 @@ function defaultClassifier(deps: MailServiceDeps): Classifier {
   const caller = new AzureOpenAiCaller({
     endpoint: deps.config.azureOpenAiEndpoint as string,
     deployment: deps.config.azureOpenAiDeployment as string,
-    ...(process.env.AZURE_OPENAI_API_VERSION?.trim() ? { apiVersion: process.env.AZURE_OPENAI_API_VERSION.trim() } : {}),
+    ...(deps.config.azureOpenAiApiVersion ? { apiVersion: deps.config.azureOpenAiApiVersion } : {}),
   });
   return new ModelClassifier(caller, deps.log);
 }
@@ -101,7 +104,8 @@ export function createMailService(deps: MailServiceDeps): MailService {
         deps.log.info('Mail sync skipped: Microsoft Graph is not configured in this environment', { mailboxId });
         return;
       }
-      await s.syncOne(mailboxId);
+      // Bounded: this runs inside the admin's HTTP request. The 2-minute timer continues any backlog.
+      await s.syncOne(mailboxId, MANUAL_SYNC_MAX_MESSAGES);
     },
   };
 }

@@ -57,6 +57,13 @@ import {
   type WallLegend,
   type WallPairPollResponse,
   type WallPairStartResponse,
+  whiteboardPaths,
+  type AssignmentTaskInput,
+  type Media,
+  type WhiteboardLiveInput,
+  type WhiteboardResponse,
+  type WhiteboardSummary,
+  type WhiteboardUpsertInput,
 } from '@branchsuite/shared';
 import {
   useMutation,
@@ -66,8 +73,8 @@ import {
   type QueryKey,
   type UseQueryOptions,
 } from '@tanstack/react-query';
-import { api, type ApiError } from './api.js';
-import { boardKeyIncludes, keys, type CandidateStatus, type TaskView } from './queryKeys.js';
+import { api, ApiError, DEV_USER_HEADER, errorFromResponse, getDevUser } from './api.js';
+import { boardKeyIncludes, DISPLAY_TOKEN_HEADER, keys, PAIRING_SECRET_HEADER, type CandidateStatus, type TaskView } from './queryKeys.js';
 
 export { keys } from './queryKeys.js';
 
@@ -77,8 +84,8 @@ type QueryOpts<T> = Omit<UseQueryOptions<T, ApiError, T, QueryKey>, 'queryKey' |
 export type RosterEntry = PersonLite | User;
 export const isFullUser = (p: RosterEntry): p is User => 'email' in p;
 
-export const DISPLAY_TOKEN_HEADER = 'x-display-token';
-export const PAIRING_SECRET_HEADER = 'x-pairing-secret';
+// Defined in queryKeys.ts so the wall chunk can use them without pulling in every staff hook.
+export { DISPLAY_TOKEN_HEADER, PAIRING_SECRET_HEADER } from './queryKeys.js';
 
 // =====================================================================================
 // cache helpers
@@ -135,6 +142,14 @@ function afterTaskWrite(qc: QueryClient): void {
   void qc.invalidateQueries({ queryKey: keys.tasksRoot() });
 }
 
+/**
+ * Thin useMutation wrapper that writes the server result into the caches (hook-level onSuccess).
+ *
+ * Caller hazard (TanStack Query v5): per-call callbacks, as in `mutate(vars, { onError })`, do not run if
+ * the calling component unmounts first, and with several calls in flight on one hook only the latest
+ * call's callbacks fire. When the UI closes right after a write (popovers, dialogs) and still needs to
+ * toast the outcome, use `mutateAsync(vars).then(onOk, onErr)` instead.
+ */
 function useApiMutation<TVars, TData>(fn: (vars: TVars) => Promise<TData>, onSuccess?: (qc: QueryClient, data: TData, vars: TVars) => void) {
   const qc = useQueryClient();
   return useMutation<TData, ApiError, TVars>({
@@ -340,19 +355,20 @@ export interface OpeningWrite extends OrderRef {
   input: OpeningUpdateInput;
 }
 
-type BoardSnapshot = Array<[QueryKey, BoardResponse | undefined]>;
+/** The one line a write replaced, so a failure can undo just that line. */
+type OpeningSnapshot = { orderId: string; previous: Order['openings'][number] } | null;
 
 /**
- * PUT a line. The board updates instantly using the shared rule; a refusal (rule error, 409, 403)
- * restores the previous cache and refetches so the screen matches the server.
+ * Line write with an optimistic cache update. On failure only the failed line is put back, so a
+ * second write still in flight on the same board keeps its optimistic state until the refetch lands.
  */
 export function useUpdateOpening() {
   const qc = useQueryClient();
-  return useMutation<Order, ApiError, OpeningWrite, { snapshot: BoardSnapshot }>({
+  return useMutation<Order, ApiError, OpeningWrite, { undo: OpeningSnapshot }>({
     mutationFn: ({ branchId, orderId, openingId, input }) => api.put<Order>(paths.opening(branchId, orderId, openingId), input),
     onMutate: async ({ orderId, openingId, input }) => {
       await qc.cancelQueries({ queryKey: keys.boardRoot() });
-      const snapshot = qc.getQueriesData<BoardResponse>({ queryKey: keys.boardRoot() });
+      let undo: OpeningSnapshot = null;
       const actorId = qc.getQueryData<MeResponse>(keys.me())?.user.id;
       if (actorId) {
         const nowIso = new Date().toISOString();
@@ -367,13 +383,26 @@ export function useUpdateOpening() {
             // The rule refuses this write; leave the cache alone and let the server explain.
             return board;
           }
+          const previous = target.openings.find((o) => o.id === openingId);
+          if (previous && !undo) undo = { orderId, previous };
           return { ...board, orders: replaceById(board.orders, next) };
         });
       }
-      return { snapshot };
+      return { undo };
     },
     onError: (_error, _vars, ctx) => {
-      for (const [key, data] of ctx?.snapshot ?? []) qc.setQueryData(key, data);
+      const undo = ctx?.undo;
+      if (undo) {
+        qc.setQueriesData<BoardResponse>({ queryKey: keys.boardRoot() }, (board) => {
+          if (!board) return board;
+          return {
+            ...board,
+            orders: board.orders.map((o) =>
+              o.id === undo.orderId ? { ...o, openings: o.openings.map((line) => (line.id === undo.previous.id ? undo.previous : line)) } : o,
+            ),
+          };
+        });
+      }
       void qc.invalidateQueries({ queryKey: keys.boardRoot() });
     },
     onSuccess: (order) => afterOrderWrite(qc, order),
@@ -446,8 +475,11 @@ export function useWallLegend(branchId: string, options?: QueryOpts<WallLegend>)
   return useQuery({ queryKey: keys.wallLegend(branchId), queryFn: ({ signal }) => api.get<WallLegend>(paths.wallLegend(branchId), { signal }), ...options });
 }
 
-export function useWallPreview(branchId: string, options?: QueryOpts<WallFeed>) {
-  return useQuery({ queryKey: keys.wallPreview(branchId), queryFn: ({ signal }) => api.get<WallFeed>(paths.wallPreview(branchId), { signal }), ...options });
+/** Staff preview of the lobby feed. `mode: 'whiteboard'` asks for the huddle takeover as the TV would show it when live. */
+export function useWallPreview(branchId: string, options?: QueryOpts<WallFeed> & { mode?: 'board' | 'whiteboard' }) {
+  const { mode = 'board', ...rest } = options ?? {};
+  const path = mode === 'whiteboard' ? `${paths.wallPreview(branchId)}?mode=whiteboard` : paths.wallPreview(branchId);
+  return useQuery({ queryKey: keys.wallPreview(branchId, mode), queryFn: ({ signal }) => api.get<WallFeed>(path, { signal }), ...rest });
 }
 
 // =====================================================================================
@@ -469,17 +501,19 @@ export function useCreateCandidate() {
   );
 }
 
+/** PATCH returns the candidate plus any linked order whose line it re-synced (initials, start date). */
 export function useUpdateCandidate() {
-  return useApiMutation<{ branchId: string; candidateId: string; input: CandidateUpdateInput }, Candidate>(
+  return useApiMutation<{ branchId: string; candidateId: string; input: CandidateUpdateInput }, CandidateMutationResult>(
     ({ branchId, candidateId, input }) => api.patch(paths.candidate(branchId, candidateId), input),
-    upsertCandidate,
+    applyCandidateResult,
   );
 }
 
+/** Archiving releases a held line; the result carries the updated order so the board updates at once. */
 export function useArchiveCandidate() {
-  return useApiMutation<{ branchId: string; candidateId: string }, Candidate>(
+  return useApiMutation<{ branchId: string; candidateId: string }, CandidateMutationResult>(
     ({ branchId, candidateId }) => api.post(paths.candidateAction(branchId, candidateId, 'archive')),
-    upsertCandidate,
+    applyCandidateResult,
   );
 }
 
@@ -665,4 +699,124 @@ export function useWallFeed(displayToken: string | null, options?: QueryOpts<Wal
     enabled: displayToken !== null,
     ...options,
   });
+}
+
+// =====================================================================================
+// morning whiteboard (huddle)
+// =====================================================================================
+
+/** Dates in [from, to] that have a whiteboard (max 62-day range on the server). */
+export function useWhiteboards(branchId: string, from: string, to: string, options?: QueryOpts<WhiteboardSummary[]>) {
+  return useQuery({
+    queryKey: keys.whiteboards(branchId, from, to),
+    queryFn: ({ signal }) => api.get<WhiteboardSummary[]>(whiteboardPaths.list(branchId, from, to), { signal }),
+    enabled: branchId !== '',
+    ...options,
+  });
+}
+
+export function useWhiteboard(branchId: string, date: string, options?: QueryOpts<WhiteboardResponse>) {
+  return useQuery({
+    queryKey: keys.whiteboard(branchId, date),
+    queryFn: ({ signal }) => api.get<WhiteboardResponse>(whiteboardPaths.board(branchId, date), { signal }),
+    enabled: branchId !== '',
+    ...options,
+  });
+}
+
+interface WhiteboardRef {
+  branchId: string;
+  date: string;
+}
+
+/** A whiteboard write: store the response for its day, refresh the date marks and the wall preview. */
+export function afterWhiteboardWrite(qc: QueryClient, branchId: string, date: string, res: WhiteboardResponse): void {
+  qc.setQueryData(keys.whiteboard(branchId, date), { whiteboard: res.whiteboard, view: res.view } satisfies WhiteboardResponse);
+  void qc.invalidateQueries({ queryKey: [...keys.whiteboardRoot(branchId), 'list'] });
+  void qc.invalidateQueries({ queryKey: keys.wallPreview(branchId) });
+}
+
+/** PUT the whole board (manager). Creates it with defaults when the day has none yet. */
+export function useSaveWhiteboard() {
+  return useApiMutation<WhiteboardRef & { input: WhiteboardUpsertInput }, WhiteboardResponse>(
+    ({ branchId, date, input }) => api.put(whiteboardPaths.board(branchId, date), input),
+    (qc, res, { branchId, date }) => afterWhiteboardWrite(qc, branchId, date, res),
+  );
+}
+
+export function useSetWhiteboardLive() {
+  return useApiMutation<WhiteboardRef & { live: WhiteboardLiveInput['live'] }, WhiteboardResponse>(
+    ({ branchId, date, live }) => api.post(whiteboardPaths.action(branchId, date, 'live'), { live } satisfies WhiteboardLiveInput),
+    (qc, res, { branchId, date }) => afterWhiteboardWrite(qc, branchId, date, res),
+  );
+}
+
+export function useCopyWhiteboard() {
+  return useApiMutation<WhiteboardRef & { fromDate: string }, WhiteboardResponse>(
+    ({ branchId, date, fromDate }) => api.post(whiteboardPaths.action(branchId, date, 'copy'), { fromDate }),
+    (qc, res, { branchId, date }) => afterWhiteboardWrite(qc, branchId, date, res),
+  );
+}
+
+/** Tick an assignment (the assigned person or a manager). */
+export function useAssignmentDone() {
+  return useApiMutation<WhiteboardRef & { itemId: string; done: boolean }, WhiteboardResponse>(
+    ({ branchId, date, itemId, done }) => api.post(whiteboardPaths.assignment(branchId, date, itemId, 'done'), { done }),
+    (qc, res, { branchId, date }) => afterWhiteboardWrite(qc, branchId, date, res),
+  );
+}
+
+/** Create a branch inbox task from an assignment item and link it (manager). */
+export function useAssignmentTask() {
+  return useApiMutation<WhiteboardRef & { itemId: string; input?: AssignmentTaskInput }, WhiteboardResponse & { task: Task }>(
+    ({ branchId, date, itemId, input }) => api.post(whiteboardPaths.assignment(branchId, date, itemId, 'task'), input ?? { priority: 'normal' }),
+    (qc, res, { branchId, date }) => {
+      afterWhiteboardWrite(qc, branchId, date, res);
+      afterTaskWrite(qc);
+    },
+  );
+}
+
+function devHeaders(): Record<string, string> {
+  const devUser = getDevUser();
+  return devUser ? { [DEV_USER_HEADER]: devUser } : {};
+}
+
+/**
+ * Upload an image as the raw request body (no multipart): Content-Type is the image type and the
+ * original name travels in `x-file-name`. The server checks size and magic bytes again.
+ */
+export async function uploadWhiteboardMedia(branchId: string, file: File, signal?: AbortSignal): Promise<Media> {
+  let res: Response;
+  try {
+    res = await fetch(whiteboardPaths.uploadMedia(branchId), {
+      method: 'POST',
+      body: file,
+      headers: { accept: 'application/json', 'content-type': file.type, 'x-file-name': encodeURIComponent(file.name || 'screenshot.png'), ...devHeaders() },
+      credentials: 'same-origin',
+      signal,
+    });
+  } catch (e) {
+    if (e instanceof DOMException && e.name === 'AbortError') throw e;
+    throw new ApiError(0, 'network', 'Cannot reach BranchSuite. Check your connection.');
+  }
+  if (!res.ok) throw await errorFromResponse(res);
+  return (await res.json()) as Media;
+}
+
+export function useUploadMedia() {
+  return useMutation<Media, ApiError, { branchId: string; file: File; signal?: AbortSignal }>({
+    mutationFn: ({ branchId, file, signal }) => uploadWhiteboardMedia(branchId, file, signal),
+  });
+}
+
+/**
+ * Staff image bytes (`/api/branches/:b/media/:id`) as a Blob. <img> cannot send the dev-user header,
+ * so images are fetched and shown through object URLs. Only same-origin /api/ paths are fetched.
+ */
+export async function fetchStaffMedia(url: string, signal?: AbortSignal): Promise<Blob> {
+  if (!url.startsWith('/api/')) throw new ApiError(0, 'bad_request', 'Unexpected media address.');
+  const res = await fetch(url, { headers: devHeaders(), credentials: 'same-origin', signal });
+  if (!res.ok) throw await errorFromResponse(res);
+  return res.blob();
 }

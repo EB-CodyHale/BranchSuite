@@ -1,6 +1,6 @@
 import {
   openingCounts,
-  orderAgeDays,
+  orderAgeOn,
   payText,
   scheduleText,
   shortDay,
@@ -60,7 +60,7 @@ function OrderCardImpl({ order, account, owner, today, timeZone, branchName, can
   const headingId = useId();
   const [noteOpen, setNoteOpen] = useState(false);
   const counts = openingCounts(order);
-  const age = orderAgeDays(order, timeZone);
+  const age = orderAgeOn(order, timeZone, today);
   const aging = !counts.covered && age >= LIMITS.agingOrderDays;
   const unit = unitText(account, order.unitId);
   const where = [unit, order.site].filter(Boolean).join(' · ');

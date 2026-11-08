@@ -195,3 +195,56 @@ export type WhiteboardViewBlock =
  * served only while the referencing whiteboard is live).
  */
 export type WallMode = 'board' | 'whiteboard';
+
+// ---------- HTTP contract ----------
+/**
+ * Routes (staff unless noted). :date is a branch-local day key. Managers edit; any branch member reads.
+ *   GET    /branches/:b/whiteboards?from=&to=                     -> WhiteboardSummary[]  (dates that have a board, max 62-day range)
+ *   GET    /branches/:b/whiteboards/:date                         -> WhiteboardResponse   (whiteboard null when none yet)
+ *   PUT    /branches/:b/whiteboards/:date   WhiteboardUpsertInput -> WhiteboardResponse   (manager; creates with defaults)
+ *   POST   /branches/:b/whiteboards/:date/live  WhiteboardLiveInput -> WhiteboardResponse (manager)
+ *   POST   /branches/:b/whiteboards/:date/copy  WhiteboardCopyInput -> WhiteboardResponse (manager; replaces blocks)
+ *   POST   /branches/:b/whiteboards/:date/assignments/:itemId/done  AssignmentDoneInput -> WhiteboardResponse
+ *                                                                  (the assigned person, or a manager)
+ *   POST   /branches/:b/whiteboards/:date/assignments/:itemId/task  AssignmentTaskInput -> WhiteboardResponse & { task: Task }
+ *                                                                  (manager; creates a branch inbox task assigned to the item's user, links taskId)
+ *   POST   /branches/:b/media      raw image body; Content-Type image/png|jpeg|webp; header x-file-name -> Media (manager; <= maxImageBytes;
+ *                                  magic bytes must match Content-Type; width/height read from header bytes)
+ *   GET    /branches/:b/media/:id                                 -> image bytes (staff of branch; Cache-Control private, max-age=3600)
+ *   -- display token --
+ *   GET    /wall/media/:id                                        -> image bytes, ONLY if the display's branch whiteboard is live now
+ *                                                                    and references the media; else 404
+ * Wall feed: GET /wall/feed adds mode/whiteboard (see WallFeed). Realtime entity 'whiteboard' is published to
+ * scope:<b> and wall:<b> on every whiteboard change, plus at window start/end (maintenance timer every minute
+ * is NOT required: displays re-evaluate by refetching at the window boundaries they receive in the view).
+ * Default window for a new board: 07:30-08:15.
+ */
+export interface WhiteboardResponse {
+  whiteboard: Whiteboard | null;
+  /** Staff-resolved view (mediaUrl -> /api/branches/:b/media/:id); null when no board. */
+  view: WhiteboardView | null;
+}
+export interface WhiteboardSummary {
+  date: string;
+  title: string;
+  blockCount: number;
+  live: Whiteboard['live'];
+}
+export type AssignmentDoneInput = z.infer<typeof zAssignmentDoneInput>;
+export type AssignmentTaskInput = z.infer<typeof zAssignmentTaskInput>;
+export type WhiteboardLiveInput = z.infer<typeof zWhiteboardLiveInput>;
+export type WhiteboardCopyInput = z.infer<typeof zWhiteboardCopyInput>;
+
+export const DEFAULT_HUDDLE_WINDOW = { start: '07:30', end: '08:15' } as const;
+
+const enc = encodeURIComponent;
+export const whiteboardPaths = {
+  list: (b: string, from: string, to: string) => `/api/branches/${enc(b)}/whiteboards?from=${from}&to=${to}`,
+  board: (b: string, date: string) => `/api/branches/${enc(b)}/whiteboards/${date}`,
+  action: (b: string, date: string, action: 'live' | 'copy') => `/api/branches/${enc(b)}/whiteboards/${date}/${action}`,
+  assignment: (b: string, date: string, itemId: string, action: 'done' | 'task') =>
+    `/api/branches/${enc(b)}/whiteboards/${date}/assignments/${enc(itemId)}/${action}`,
+  uploadMedia: (b: string) => `/api/branches/${enc(b)}/media`,
+  media: (b: string, id: string) => `/api/branches/${enc(b)}/media/${enc(id)}`,
+  wallMedia: (id: string) => `/api/wall/media/${enc(id)}`,
+} as const;

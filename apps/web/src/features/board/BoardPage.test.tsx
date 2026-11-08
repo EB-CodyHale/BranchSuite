@@ -229,4 +229,34 @@ describe('order form', () => {
     });
     await waitFor(() => expect(screen.queryByRole('dialog', { name: 'New order' })).toBeNull());
   });
+
+  it('focuses one order from an inbox deep link (?order=) and clears back to the whole board', async () => {
+    renderBoardPage({ me: singleBranch(), board: boardOf(ORDERS), path: '/?order=o_maple' });
+    await screen.findAllByRole('article');
+    expect(screen.getAllByRole('article').map((a) => a.dataset.orderId)).toEqual(['o_maple']);
+    expect(screen.getByText('Showing one order: Maple Freight · Loader.')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Show the whole board' }));
+    await waitFor(() => expect(screen.getAllByRole('article')).toHaveLength(3));
+  });
+
+  it('points a deep-linked draft at Needs review for managers', async () => {
+    const draft = order({ id: 'o_draft', accountId: 'acc_maple', role: 'Sorter', status: 'draft', openings: [line('d1')] });
+    renderBoardPage({ me: singleBranch(), board: boardOf([...ORDERS, draft]), path: '/?order=o_draft' });
+    expect(await screen.findByText(/Maple Freight · Sorter is a draft from email/)).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Needs review' })).toBeTruthy();
+    expect(screen.queryAllByRole('article')).toHaveLength(0);
+  });
+
+  it('explains an order that is not on the board', async () => {
+    renderBoardPage({ me: singleBranch('member'), board: boardOf(ORDERS), path: '/?order=o_missing' });
+    expect(await screen.findByText(/That order is not on the board in this branch scope/)).toBeTruthy();
+    expect(screen.queryByText('Nothing matches these filters')).toBeNull();
+  });
+
+  it('shows one account from a pipeline deep link (?account=), ignoring saved filters', async () => {
+    renderBoardPage({ me: singleBranch(), board: boardOf(ORDERS), path: '/?account=acc_lakeside' });
+    await screen.findAllByRole('article');
+    expect(screen.getAllByRole('article').map((a) => a.dataset.orderId).sort()).toEqual(['o_lake', 'o_lake2']);
+    expect(screen.getByText('Showing Lakeside Foods only: 2 orders.')).toBeTruthy();
+  });
 });

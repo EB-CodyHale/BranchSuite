@@ -9,3 +9,5 @@ export * from './domain/pipeline.js';
 export * from './domain/accounts.js';
 export * from './domain/tasks.js';
 export * from './domain/permissions.js';
+export * from './whiteboard.js';
+export * from './domain/whiteboard.js';

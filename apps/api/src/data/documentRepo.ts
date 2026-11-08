@@ -13,9 +13,12 @@ import {
   type EmailMessage,
   type FilteredMail,
   type Mailbox,
+  type Media,
   type Order,
   type Task,
   type User,
+  type Whiteboard,
+  WHITEBOARD_LIMITS,
 } from '@branchsuite/shared';
 import { HttpError } from '../http/errors.js';
 import type { Mutator, OrderQuery, Pairing, PipelineChange, Repo, TaskDayQuery } from './repo.js';
@@ -46,6 +49,8 @@ const K = {
   candidate: { container: 'board', type: 'candidate' },
   task: { container: 'board', type: 'task', scopeIsEntityField: true },
   event: { container: 'board', type: 'event', ttlSeconds: LIMITS.auditTtlSeconds },
+  whiteboard: { container: 'board', type: 'whiteboard' },
+  media: { container: 'board', type: 'media', ttlSeconds: WHITEBOARD_LIMITS.mediaRetentionDays * 86_400 },
   message: { container: 'mail', type: 'message', scopeIsEntityField: true },
   filtered: { container: 'mail', type: 'filtered', scopeIsEntityField: true, ttlSeconds: LIMITS.filteredMailTtlSeconds },
 } as const satisfies Record<string, Kind>;
@@ -281,6 +286,59 @@ export class DocumentRepo implements Repo {
     });
   }
 
+  // ---------- whiteboards ----------
+  listWhiteboards(branchId: string, from: string, to: string) {
+    return this.list<Whiteboard>(
+      K.whiteboard,
+      branchId,
+      [
+        { field: 'date', op: '>=', value: from },
+        { field: 'date', op: '<=', value: to },
+      ],
+      { orderBy: { field: 'date' } },
+    );
+  }
+  getWhiteboard(branchId: string, date: string) { return this.getOne<Whiteboard>(K.whiteboard, branchId, whiteboardId(branchId, date)); }
+
+  upsertWhiteboard(branchId: string, date: string, fn: (current: Whiteboard | null) => Whiteboard | Promise<Whiteboard>): Promise<Whiteboard> {
+    const id = whiteboardId(branchId, date);
+    return transact(this.store, 'board', branchId, async (tx) => {
+      const doc = await tx.get(id);
+      if (doc && doc.type !== K.whiteboard.type) throw new Error(`Document ${id} is not a whiteboard`);
+      const next = await fn(doc ? fromDoc<Whiteboard>(K.whiteboard, doc) : null);
+      assertBoardIdentity(next, branchId, date);
+      return { writes: [toDoc(K.whiteboard, next, branchId)], result: next };
+    });
+  }
+
+  updateWhiteboard(branchId: string, date: string, fn: Mutator<Whiteboard>) {
+    return this.change<Whiteboard>(K.whiteboard, branchId, whiteboardId(branchId, date), async (current) => {
+      const next = await fn(current);
+      assertBoardIdentity(next, branchId, date);
+      return next;
+    });
+  }
+
+  createTaskForWhiteboard(branchId: string, date: string, build: (current: Whiteboard) => { whiteboard: Whiteboard; task: Task }) {
+    const id = whiteboardId(branchId, date);
+    return transact(this.store, 'board', branchId, async (tx) => {
+      const doc = await tx.get(id);
+      if (!doc || doc.type !== K.whiteboard.type) throw new HttpError(404, 'not_found', 'No whiteboard for that date.');
+      const { whiteboard, task } = build(fromDoc<Whiteboard>(K.whiteboard, doc));
+      assertBoardIdentity(whiteboard, branchId, date);
+      if (task.scopeId !== branchId || task.branchId !== branchId) throw new Error('createTaskForWhiteboard built a task for another scope');
+      if (await tx.get(task.id)) throw conflictError();
+      return { writes: [toDoc(K.whiteboard, whiteboard, branchId), toDoc(K.task, task, branchId)], result: { whiteboard, task } };
+    });
+  }
+
+  // ---------- media ----------
+  getMedia(branchId: string, id: string) { return this.getOne<Media>(K.media, branchId, id); }
+  findMediaBySha256(branchId: string, sha256: string) {
+    return this.first<Media>(K.media, branchId, [{ field: 'sha256', op: '=', value: sha256 }]);
+  }
+  createMedia(media: Media) { return this.insert(K.media, media, media.branchId); }
+
   // ---------- audit ----------
   async addEvent(event: AuditEvent): Promise<void> {
     await this.insert(K.event, event, event.branchId);
@@ -308,3 +366,14 @@ export class DocumentRepo implements Repo {
 }
 
 export { K as DOC_KINDS };
+
+/** Deterministic: one board per branch per day. */
+export function whiteboardId(branchId: string, date: string): string {
+  return `wb_${branchId}_${date}`;
+}
+
+function assertBoardIdentity(wb: Whiteboard, branchId: string, date: string): void {
+  if (wb.id !== whiteboardId(branchId, date) || wb.branchId !== branchId || wb.date !== date) {
+    throw new Error('A whiteboard mutator must not change its id, branch or date');
+  }
+}

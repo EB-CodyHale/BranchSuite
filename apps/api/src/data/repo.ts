@@ -15,10 +15,12 @@ import type {
   EmailMessage,
   FilteredMail,
   Mailbox,
+  Media,
   Order,
   OrderStatus,
   Task,
   User,
+  Whiteboard,
 } from '@branchsuite/shared';
 
 export type Mutator<T> = (current: T) => T | Promise<T>;
@@ -142,6 +144,22 @@ export interface Repo {
   updateTask(scopeId: string, id: string, fn: Mutator<Task>): Promise<Task>;
   /** Create an order from a branch task and link the task to it, atomically. */
   createOrderForTask(branchId: string, taskId: string, build: (task: Task) => { task: Task; order: Order }): Promise<{ task: Task; order: Order }>;
+
+  // ----- whiteboards (board container, id wb_<branchId>_<date>) -----
+  /** Boards with from <= date <= to, ascending by date. */
+  listWhiteboards(branchId: string, from: string, to: string): Promise<Whiteboard[]>;
+  getWhiteboard(branchId: string, date: string): Promise<Whiteboard | null>;
+  /** Create or replace atomically; `fn` receives the current board (null when none) and may run more than once. */
+  upsertWhiteboard(branchId: string, date: string, fn: (current: Whiteboard | null) => Whiteboard | Promise<Whiteboard>): Promise<Whiteboard>;
+  /** 404 when the board does not exist. */
+  updateWhiteboard(branchId: string, date: string, fn: Mutator<Whiteboard>): Promise<Whiteboard>;
+  /** Create a branch task and write the board that links it, in ONE transactional batch. */
+  createTaskForWhiteboard(branchId: string, date: string, build: (current: Whiteboard) => { whiteboard: Whiteboard; task: Task }): Promise<{ whiteboard: Whiteboard; task: Task }>;
+
+  // ----- whiteboard media metadata (bytes live in the MediaStore) -----
+  getMedia(branchId: string, id: string): Promise<Media | null>;
+  findMediaBySha256(branchId: string, sha256: string): Promise<Media | null>;
+  createMedia(media: Media): Promise<Media>;
 
   // ----- audit -----
   addEvent(event: AuditEvent): Promise<void>;

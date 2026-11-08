@@ -86,12 +86,16 @@ export class MailSync {
     });
   }
 
-  /** Sync one mailbox now (admin "Sync now"), respecting the lease. */
-  async syncOne(mailboxId: string): Promise<SyncResult> {
+  /**
+   * Sync one mailbox now (admin "Sync now"), respecting the lease. `maxMessages` bounds the work so an
+   * HTTP request stays short; a larger backlog keeps its continuation link and the timer finishes it.
+   */
+  async syncOne(mailboxId: string, maxMessages: number = this.maxMessagesPerRun): Promise<SyncResult> {
     return this.withLease(async () => {
       const mailbox = await this.deps.repo.getMailbox(mailboxId);
       if (!mailbox || !this.eligible(mailbox)) return { mailboxes: 0, processed: 0 };
-      const processed = await this.syncMailbox(mailbox, { remaining: this.maxMessagesPerRun }, new IngestCache(this.deps.repo));
+      const budget = { remaining: Math.max(1, Math.min(maxMessages, this.maxMessagesPerRun)) };
+      const processed = await this.syncMailbox(mailbox, budget, new IngestCache(this.deps.repo));
       return { mailboxes: 1, processed };
     });
   }
@@ -151,9 +155,10 @@ export class MailSync {
     if (loaded) {
       state = loaded.state;
     } else {
-      // First sync: never earlier than the mailbox's enable time (its last admin change) or the window.
+      // First sync: never earlier than the mailbox's enable time or the window. Records from before
+      // enabledAt existed fall back to updatedAt (their last admin change).
       const windowStart = now.getTime() - this.initialWindowMs;
-      const enabledAt = Date.parse(mailbox.updatedAt);
+      const enabledAt = Date.parse(mailbox.enabledAt ?? mailbox.updatedAt);
       state = {
         id: `state_${folder}`,
         mailboxId: mailbox.id,

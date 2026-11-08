@@ -369,7 +369,7 @@ export async function seedDevData(repo: DocumentRepo, now: Date = new Date()): P
     { id: 'mbx_casey', address: seedEmail('usr_casey'), kind: 'personal' as const, branchIds: [], userId: 'usr_casey' },
   ];
   for (const m of mailboxes) {
-    await repo.createMailbox({ ...m, brand: '', enabled: true, status: 'ok', lastSyncAt: isoDaysAgo(0), lastError: null, ...audited('usr_avery', isoDaysAgo(30)) });
+    await repo.createMailbox({ ...m, brand: '', enabled: true, enabledAt: isoDaysAgo(30), status: 'ok', lastSyncAt: isoDaysAgo(0), lastError: null, ...audited('usr_avery', isoDaysAgo(30)) });
   }
 
   // ----- tasks, messages, filtered mail -----

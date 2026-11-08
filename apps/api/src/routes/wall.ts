@@ -7,7 +7,7 @@ import type { Router } from '../http/router.js';
 import { created, ok } from '../http/types.js';
 import { parse } from '../http/validate.js';
 import { groups } from '../realtime/publisher.js';
-import { audit, managedBranch, staff } from './support.js';
+import { audit, managedBranch, notify, staff } from './support.js';
 import { buildWallFeed } from './wallFeed.js';
 
 export const WALL_POLL_SECONDS = 60;
@@ -57,6 +57,8 @@ export function registerWallRoutes(router: Router): void {
         d.revokedAt ? d : { ...d, revokedAt: ctx.now().toISOString(), updatedAt: ctx.now().toISOString(), updatedBy: caller.user.id },
       );
       await audit(ctx, caller.user.id, { branchId: branch.id, entity: 'display', entityId: display.id, action: 'revoke', summary: `Revoked display ${display.name}` });
+      // Every wall in the branch refetches; the revoked one gets its 401 now instead of at its next poll.
+      notify(ctx, branch.id, ['wall'], { wall: true });
       return ok(display);
     }),
   );

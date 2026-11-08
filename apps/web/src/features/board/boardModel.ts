@@ -5,12 +5,11 @@
  */
 import {
   accountLabel,
-  dayKeyOf,
-  daysBetween,
   effectiveOwnerId,
   isDayKey,
   LIMITS,
   openingCounts,
+  orderAgeOn,
   ROLE_CATEGORY_IDS,
   startLabel,
   todayKey,
@@ -133,13 +132,13 @@ export function hasStartingSoon(order: Order, today: string): boolean {
   return order.openings.some((o) => o.state === 'committed' && startLabel(o, today).kind === 'soon');
 }
 
-/** Active, not covered, open LIMITS.agingOrderDays or more (same day math as boardMetrics). */
-export function isAging(order: Order, today: string): boolean {
+/** Active, not covered, open LIMITS.agingOrderDays or more in branch-local days (same math as boardMetrics and the card). */
+export function isAging(order: Order, today: string, timeZone: string = DEFAULT_TIME_ZONE): boolean {
   if (order.status !== 'active' || openingCounts(order).covered) return false;
-  return daysBetween(dayKeyOf(order.createdAt, 'UTC'), today) >= LIMITS.agingOrderDays;
+  return orderAgeOn(order, timeZone, today) >= LIMITS.agingOrderDays;
 }
 
-export function matchesQuick(order: Order, quick: QuickFilter, today: string): boolean {
+export function matchesQuick(order: Order, quick: QuickFilter, today: string, timeZone: string = DEFAULT_TIME_ZONE): boolean {
   if (order.status !== 'active') return false;
   const c = openingCounts(order);
   switch (quick) {
@@ -150,7 +149,7 @@ export function matchesQuick(order: Order, quick: QuickFilter, today: string): b
     case 'startingSoon':
       return hasStartingSoon(order, today);
     case 'aging':
-      return isAging(order, today);
+      return isAging(order, today, timeZone);
   }
 }
 
@@ -199,6 +198,8 @@ export interface FilterContext {
   owners: Map<string, string | null>;
   /** Branches in scope (used to ignore stale branch chips). */
   scopeBranchIds: readonly string[];
+  /** Branch id -> IANA time zone, for branch-local order age. Missing entries use DEFAULT_TIME_ZONE. */
+  timeZones?: Record<string, string>;
 }
 
 /** Orders shown on the main board (never drafts or closed). Order of the input is preserved. */
@@ -216,7 +217,7 @@ export function filterOrders(orders: readonly Order[], ctx: FilterContext): Orde
       if (toolbar.owner === OWNER_NONE ? owner !== null : owner !== toolbar.owner) return false;
     }
     const today = ctx.today[order.branchId];
-    if (quick && (today === undefined || !matchesQuick(order, quick, today))) return false;
+    if (quick && (today === undefined || !matchesQuick(order, quick, today, ctx.timeZones?.[order.branchId]))) return false;
     return orderMatchesSearch(order, ctx.lookups.accountsById.get(order.accountId), ctx.search);
   });
 }

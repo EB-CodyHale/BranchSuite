@@ -49,6 +49,27 @@ describe('useUpdateOpening', () => {
     expect(result.current.error?.code).toBe('conflict');
     expect(lineOf(qc, key)).toMatchObject({ state: 'open', initials: null });
   });
+
+  it('undoes only the failed line while another write is still in flight', async () => {
+    const { qc, wrapper } = harness();
+    const key = keys.board(['br_north']);
+    qc.setQueryData(key, board([order()]));
+    const pending: Array<(r: Response) => void> = [];
+    vi.spyOn(globalThis, 'fetch').mockImplementation(() => new Promise<Response>((r) => pending.push(r)));
+
+    const first = renderHook(() => useUpdateOpening(), { wrapper }).result;
+    const second = renderHook(() => useUpdateOpening(), { wrapper }).result;
+    act(() => first.current.mutate({ branchId: 'br_north', orderId: 'ord_1', openingId: 'op_1', input: { state: 'committed', initials: 'JD' } }));
+    await waitFor(() => expect(pending).toHaveLength(1));
+    act(() => second.current.mutate({ branchId: 'br_north', orderId: 'ord_1', openingId: 'op_2', input: { state: 'committed', initials: 'KL' } }));
+    await waitFor(() => expect(pending).toHaveLength(2));
+
+    pending[0]!(jsonResponse({ error: { code: 'conflict', message: 'Changed' } }, 409));
+    await waitFor(() => expect(first.current.isError).toBe(true));
+    const lines = qc.getQueryData<BoardResponse>(key)!.orders[0]!.openings;
+    expect(lines[0]).toMatchObject({ state: 'open', initials: null });
+    expect(lines[1]).toMatchObject({ state: 'committed', initials: 'KL' });
+  });
 });
 
 describe('candidate mutations', () => {

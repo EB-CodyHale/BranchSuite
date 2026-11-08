@@ -323,18 +323,6 @@ export function ReadOnlyNote({ children }: { children: ReactNode }) {
   );
 }
 
-/**
- * Widens a Dialog/Drawer rendered inside it. The modal reads --dialog-w from its DOM ancestors,
- * and `display: contents` keeps this wrapper out of layout.
- */
-export function DialogWidth({ width, children }: { width: string; children: ReactNode }) {
-  return (
-    <div className="contents" style={{ ['--dialog-w' as string]: width }}>
-      {children}
-    </div>
-  );
-}
-
 export interface RadioGridOption<T extends string> {
   value: T;
   /** Accessible name (also the visible text unless `content` is given). */

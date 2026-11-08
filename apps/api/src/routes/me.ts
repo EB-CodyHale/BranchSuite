@@ -44,6 +44,7 @@ async function setPersonalMailbox(ctx: AppContext, caller: Caller, enabled: bool
       userId: caller.user.id,
       brand: '',
       enabled: true,
+      enabledAt: nowIso,
       status: 'pending',
       lastSyncAt: null,
       lastError: null,
@@ -57,6 +58,7 @@ async function setPersonalMailbox(ctx: AppContext, caller: Caller, enabled: bool
   return ctx.repo.updateMailbox(existing.id, (m) => ({
     ...m,
     enabled,
+    enabledAt: enabled ? (m.enabled ? m.enabledAt : nowIso) : null,
     // Re-connecting starts over at 'pending' until the next sync proves Graph access.
     status: enabled ? (m.enabled ? m.status : 'pending') : 'disabled',
     updatedAt: nowIso,

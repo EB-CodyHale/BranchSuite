@@ -58,6 +58,9 @@ param openAiModelVersion string = '2025-04-14'
 @description('Azure OpenAI deployment name (AZURE_OPENAI_DEPLOYMENT).')
 param openAiDeploymentName string = 'triage'
 
+@description('Azure OpenAI data-plane API version the API uses (AZURE_OPENAI_API_VERSION).')
+param openAiApiVersion string = '2024-10-21'
+
 @description('Azure OpenAI deployment SKU. DataZoneStandard keeps processing in the data zone (US or EU).')
 @allowed(['Standard', 'DataZoneStandard', 'GlobalStandard'])
 param openAiDeploymentSku string = 'DataZoneStandard'
@@ -241,6 +244,7 @@ module functions 'modules/functions.bicep' = {
       COSMOS_DATABASE: cosmos.outputs.databaseName
       AZURE_OPENAI_ENDPOINT: openAi.outputs.endpoint
       AZURE_OPENAI_DEPLOYMENT: openAi.outputs.deploymentName
+      AZURE_OPENAI_API_VERSION: openAiApiVersion
       WEB_PUBSUB_ENDPOINT: webPubSub.outputs.endpoint
       WEB_PUBSUB_HUB: webPubSub.outputs.hubName
       KEY_VAULT_URI: keyVault.outputs.uri

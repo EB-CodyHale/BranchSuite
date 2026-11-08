@@ -210,9 +210,9 @@ export function OrderFormDialog({ mode, onClose }: OrderFormDialogProps) {
   };
 
   return (
-    <div className="contents [--dialog-w:40rem]">
     <Dialog
       open
+      width="40rem"
       onClose={() => !busy && onClose()}
       closeOnBackdrop={false}
       title={creating ? 'New order' : 'Edit order'}
@@ -302,6 +302,5 @@ export function OrderFormDialog({ mode, onClose }: OrderFormDialogProps) {
         <Checkbox label="Priority" description="Priority orders sort first under Most to fill." checked={form.isPriority} onChange={(e) => set('isPriority', e.target.checked)} className="sm:col-span-2" />
       </form>
     </Dialog>
-    </div>
   );
 }

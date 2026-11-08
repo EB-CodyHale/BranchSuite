@@ -1,5 +1,5 @@
 import { X } from 'lucide-react';
-import { useEffect, useId, useRef, type MouseEvent, type ReactNode, type RefObject } from 'react';
+import { useEffect, useId, useRef, type CSSProperties, type MouseEvent, type ReactNode, type RefObject } from 'react';
 import { cx } from './cx.js';
 import { IconButton } from './IconButton.js';
 
@@ -16,14 +16,17 @@ interface ModalProps {
   initialFocusRef?: RefObject<HTMLElement | null>;
   /** Set false to keep the dialog open on backdrop click (forms with unsaved input). */
   closeOnBackdrop?: boolean;
+  /** Applied to the inner panel (padding, colors). Width belongs on `width`, not here. */
   className?: string;
+  /** Panel width as a CSS length, e.g. '40rem'. Defaults to 32rem (dialog) or 28rem (drawer); always capped to the viewport. */
+  width?: string;
 }
 
 /**
  * Native <dialog> modal: the browser provides the focus trap, top layer and inert background.
  * Escape closes, focus returns to the element that opened it.
  */
-function Modal({ open, onClose, title, description, children, footer, initialFocusRef, closeOnBackdrop = true, className, variant }: ModalProps & { variant: ModalVariant }) {
+function Modal({ open, onClose, title, description, children, footer, initialFocusRef, closeOnBackdrop = true, className, width, variant }: ModalProps & { variant: ModalVariant }) {
   const ref = useRef<HTMLDialogElement>(null);
   const titleId = useId();
   const descId = useId();
@@ -60,6 +63,7 @@ function Modal({ open, onClose, title, description, children, footer, initialFoc
         onCloseRef.current();
       }}
       onClick={onBackdrop}
+      style={width ? ({ '--dialog-w': width } as CSSProperties) : undefined}
       className={cx(
         'm-0 max-h-none max-w-none bg-transparent p-0 backdrop:backdrop-blur-[1px]',
         variant === 'dialog'

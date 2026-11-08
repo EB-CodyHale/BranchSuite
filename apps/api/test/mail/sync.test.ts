@@ -21,7 +21,7 @@ describe('mail sync', () => {
   it('first sync never backfills: filtered window, only mail after enable time, delta link saved and reused', async () => {
     const { app, graph, sync, mailStore } = await setup();
     // Re-enabled 10 minutes ago.
-    await app.repo.updateMailbox('mbx_riverside', (m) => ({ ...m, updatedAt: minutesAgo(10) }));
+    await app.repo.updateMailbox('mbx_riverside', (m) => ({ ...m, enabledAt: minutesAgo(10), updatedAt: minutesAgo(10) }));
     graph.setInitial(RIVERSIDE, 'inbox', [
       {
         messages: [
@@ -54,6 +54,15 @@ describe('mail sync', () => {
     graph.calls.length = 0;
     await sync.syncAll();
     expect(graph.calls).toContainEqual({ link: 'https://graph.microsoft.com/delta/riverside-inbox-1' });
+  });
+
+  it('an unrelated admin edit does not move the no-backfill point (enabledAt, not updatedAt)', async () => {
+    const { app, graph, sync } = await setup();
+    // Enabled 30 days ago (seed), brand renamed 10 minutes ago.
+    await app.repo.updateMailbox('mbx_riverside', (m) => ({ ...m, brand: 'Renamed', updatedAt: minutesAgo(10) }));
+    await sync.syncAll();
+    const first = graph.calls.find((c) => 'address' in c && c.address === RIVERSIDE && c.folder === 'inbox');
+    expect(first).toEqual({ address: RIVERSIDE, folder: 'inbox', receivedSince: minutesAgo(60) });
   });
 
   it('uses the one-hour window for a mailbox enabled long ago', async () => {
@@ -124,6 +133,18 @@ describe('mail sync', () => {
     expect(await mailStore.getReceipt('mbx_riverside', 'p2')).not.toBeNull();
     expect((await mailStore.getState('mbx_riverside', 'inbox'))!.state.link).toBe('https://graph.microsoft.com/delta/done');
     expect((await app.repo.listOpenTasks(B1)).filter((t) => t.email?.mailboxId === 'mbx_riverside' && t.title.startsWith('Subject p')).length).toBe(2);
+  });
+
+  it('a manual syncOne honors its own smaller budget and leaves the rest for the timer', async () => {
+    const { app, graph, mailStore } = await setup();
+    const sync = new MailSync(app.deps, graph, { concurrency: 1 });
+    graph.setInitial(RIVERSIDE, 'inbox', [
+      { messages: [graphMessage('m1', { at: minutesAgo(5), text: 'First, please call.' })], nextLink: 'https://graph.microsoft.com/next/m2', deltaLink: null },
+    ]);
+    graph.byLink.set('https://graph.microsoft.com/next/m2', { messages: [graphMessage('m2', { at: minutesAgo(4), text: 'Second, please call.' })], nextLink: null, deltaLink: 'https://graph.microsoft.com/delta/m' });
+    expect((await sync.syncOne('mbx_riverside', 1)).processed).toBe(1);
+    expect((await mailStore.getState('mbx_riverside', 'inbox'))!.state).toMatchObject({ link: 'https://graph.microsoft.com/next/m2', linkKind: 'next' });
+    expect(await mailStore.getReceipt('mbx_riverside', 'm2')).toBeNull();
   });
 
   it('skips disabled mailboxes and personal mailboxes when personal mail is off', async () => {

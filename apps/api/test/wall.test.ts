@@ -44,6 +44,7 @@ describe('wall feed', () => {
     const revoke = await app.call('POST', `/branches/${B1}/displays/dsp_riverside_lobby/revoke`, { as: 'usr_morgan' });
     expect(revoke.status).toBe(200);
     expect(revoke.body.revokedAt).not.toBeNull();
+    expect(app.publisher.sent.some((s) => s.groups.includes(`wall:${B1}`) && s.message.entities.includes('wall'))).toBe(true);
     expect((await app.call('GET', '/wall/feed', { headers: display })).status).toBe(401);
   });
 

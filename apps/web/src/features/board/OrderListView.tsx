@@ -1,4 +1,4 @@
-import { openingCounts, orderAgeDays, shortDay, sortOrders, DEFAULT_TIME_ZONE, LIMITS, type Order, type PersonLite } from '@branchsuite/shared';
+import { openingCounts, orderAgeOn, shortDay, sortOrders, DEFAULT_TIME_ZONE, LIMITS, type Order, type PersonLite } from '@branchsuite/shared';
 import { ArrowDown, ArrowUp, ChevronRight, CirclePause, Star } from 'lucide-react';
 import { Fragment, memo, useMemo, useState } from 'react';
 import { cx } from '../../ui/cx.js';
@@ -59,7 +59,7 @@ export function OrderListView({ orders, owners }: OrderListViewProps) {
           unit: [unitText(account, order.unitId), order.site].filter(Boolean).join(' · '),
           counts: openingCounts(order),
           nextStart: nextStartDate(order, today),
-          age: orderAgeDays(order, branch?.timeZone ?? DEFAULT_TIME_ZONE),
+          age: orderAgeOn(order, branch?.timeZone ?? DEFAULT_TIME_ZONE, today),
           owner: ownerId ? (env.peopleById.get(ownerId) ?? null) : null,
           today,
         };

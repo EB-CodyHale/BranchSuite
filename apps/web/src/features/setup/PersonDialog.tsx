@@ -10,7 +10,7 @@ import { Select, TextField } from '../../ui/Field.js';
 import { useToast } from '../../ui/Toast.js';
 import { MarkerPicker } from './MarkerPicker.js';
 import { assignableRoles, duplicateInitials, ROLE_OPTIONS, suggestInitials, takenInitials, validatePerson, type PersonErrors, type PersonForm } from './peopleModel.js';
-import { BranchChecklist, DialogWidth, ErrorNote, Notice, Switch } from './setupUi.js';
+import { BranchChecklist, ErrorNote, Notice, Switch } from './setupUi.js';
 
 export interface PersonDialogProps {
   /** null creates a new person. */
@@ -111,9 +111,9 @@ export function PersonDialog({ person, roster, branchId, onClose }: PersonDialog
   };
 
   return (
-    <DialogWidth width="40rem">
     <Dialog
       open
+      width="40rem"
       onClose={onClose}
       closeOnBackdrop={false}
       title={isNew ? 'Add a person' : `Edit ${person.name}`}
@@ -225,6 +225,5 @@ export function PersonDialog({ person, roster, branchId, onClose }: PersonDialog
         )}
       </form>
     </Dialog>
-    </DialogWidth>
   );
 }

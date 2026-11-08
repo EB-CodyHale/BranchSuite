@@ -3,7 +3,7 @@
  * user session, must never send dev-user headers, and authenticates only with its display token.
  */
 import { paths, type RealtimeNegotiateResponse, type WallFeed, type WallPairPollResponse, type WallPairStartResponse } from '@branchsuite/shared';
-import { DISPLAY_TOKEN_HEADER, PAIRING_SECRET_HEADER } from '../../lib/queries.js';
+import { DISPLAY_TOKEN_HEADER, PAIRING_SECRET_HEADER } from '../../lib/queryKeys.js';
 import { readStorage, removeStorage, writeStorage } from '../../lib/storage.js';
 
 export const WALL_TOKEN_KEY = 'bs.wall.token';
@@ -26,11 +26,14 @@ export class WallHttpError extends Error {
 async function request<T>(url: string, init: RequestInit = {}): Promise<T> {
   let res: Response;
   try {
-    res = await fetch(url, { ...init, cache: 'no-store', credentials: 'omit', headers: { accept: 'application/json', ...init.headers } });
+    // redirect 'manual': the edge rewrites some 401s into a 302 to the staff sign-in page. For a
+    // display that can only mean "not paired", never "follow it to a login form".
+    res = await fetch(url, { ...init, cache: 'no-store', credentials: 'omit', redirect: 'manual', headers: { accept: 'application/json', ...init.headers } });
   } catch (err) {
     if ((err as { name?: string })?.name === 'AbortError') throw err;
     throw new WallHttpError(0, 'Cannot reach BranchSuite.');
   }
+  if (res.type === 'opaqueredirect' || (res.status >= 300 && res.status < 400)) throw new WallHttpError(401, 'This display is not paired.');
   if (!res.ok) {
     let message = `Request failed (${res.status}).`;
     try {
@@ -41,7 +44,12 @@ async function request<T>(url: string, init: RequestInit = {}): Promise<T> {
     }
     throw new WallHttpError(res.status, message);
   }
-  return (await res.json()) as T;
+  try {
+    return (await res.json()) as T;
+  } catch {
+    // A captive portal or proxy error page answered instead of the API.
+    throw new WallHttpError(0, 'Unexpected response from the network.');
+  }
 }
 
 export const deviceApi = {
@@ -49,7 +57,29 @@ export const deviceApi = {
   pollPairing: (pairingId: string, secret: string) => request<WallPairPollResponse>(paths.wallPairPoll(pairingId), { headers: { [PAIRING_SECRET_HEADER]: secret } }),
   feed: (token: string, signal?: AbortSignal) => request<WallFeed>(paths.wallFeed(), { headers: { [DISPLAY_TOKEN_HEADER]: token }, signal }),
   negotiate: (token: string) => request<RealtimeNegotiateResponse>(paths.wallNegotiate(), { method: 'POST', headers: { [DISPLAY_TOKEN_HEADER]: token } }),
+  media: (token: string, url: string, signal?: AbortSignal) => fetchWallMedia(token, url, signal),
 };
+
+/** Only the display-token media route is ever fetched with the token; anything else in a feed is refused. */
+export const WALL_MEDIA_PREFIX = '/api/wall/media/';
+
+/**
+ * Whiteboard image bytes for the takeover. The API serves them only while the branch whiteboard is
+ * live and references the image (else 404), so a failure here simply leaves a placeholder.
+ */
+async function fetchWallMedia(token: string, url: string, signal?: AbortSignal): Promise<Blob> {
+  if (!url.startsWith(WALL_MEDIA_PREFIX) || url.includes('..')) throw new WallHttpError(400, 'Unexpected media address.');
+  let res: Response;
+  try {
+    res = await fetch(url, { cache: 'no-store', credentials: 'omit', redirect: 'manual', headers: { [DISPLAY_TOKEN_HEADER]: token }, signal });
+  } catch (err) {
+    if ((err as { name?: string })?.name === 'AbortError') throw err;
+    throw new WallHttpError(0, 'Cannot reach BranchSuite.');
+  }
+  if (res.type === 'opaqueredirect' || (res.status >= 300 && res.status < 400)) throw new WallHttpError(401, 'This display is not paired.');
+  if (!res.ok) throw new WallHttpError(res.status, `Image unavailable (${res.status}).`);
+  return res.blob();
+}
 
 /** What a paired device remembers across power cycles. */
 export interface DisplaySession {

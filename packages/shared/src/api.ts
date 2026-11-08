@@ -51,11 +51,11 @@
  *
  *   GET    /branches/:b/candidates?status=active                -> Candidate[]
  *   POST   /branches/:b/candidates  CandidateCreateInput        -> Candidate
- *   PATCH  /branches/:b/candidates/:id CandidateUpdateInput     -> Candidate
+ *   PATCH  /branches/:b/candidates/:id CandidateUpdateInput     -> CandidateMutationResult (syncs the linked line)
  *   POST   /branches/:b/candidates/:id/stage CandidateStageInput -> CandidateMutationResult
  *   POST   /branches/:b/candidates/:id/link  CandidateLinkInput  -> CandidateMutationResult
  *   DELETE /branches/:b/candidates/:id/link                      -> CandidateMutationResult
- *   POST   /branches/:b/candidates/:id/archive                   -> Candidate
+ *   POST   /branches/:b/candidates/:id/archive                   -> CandidateMutationResult (releases the linked line)
  *
  *   GET    /tasks?view=branch|personal|combined&branches=a,b&date=YYYY-MM-DD -> TasksResponse
  *   POST   /branches/:b/tasks       TaskCreateInput             -> Task
@@ -70,7 +70,7 @@
  *   GET    /mailboxes                                           -> Mailbox[]          (admin; managers see own branches)
  *   POST   /mailboxes               MailboxCreateInput          -> Mailbox            (admin)
  *   PATCH  /mailboxes/:id           MailboxUpdateInput          -> Mailbox            (admin)
- *   POST   /mailboxes/:id/sync                                  -> { queued: true }   (admin)
+ *   POST   /mailboxes/:id/sync                                  -> { queued: true }   (admin; syncs up to 25 messages in-request, the timer continues the rest)
  *   GET    /branches/:b/mail/filtered                           -> FilteredMail[]     (manager)
  *   POST   /mail/filtered/:scopeId/:id/promote                  -> Task               (manager; owner for personal)
  *
@@ -86,6 +86,7 @@
  *   GET    /wall/feed              header x-display-token       -> WallFeed
  *   POST   /wall/negotiate         header x-display-token       -> RealtimeNegotiateResponse (group = wall:<branchId> only)
  */
+import type { WallMode, WhiteboardView } from './whiteboard.js';
 import type { MarkerId, OpeningState, RoleCategory, WallColorId, WallGlyph } from './constants.js';
 import type {
   Account,
@@ -213,7 +214,7 @@ export interface RealtimeNegotiateResponse {
 export interface RealtimeMessage {
   type: 'invalidate';
   scopeId: string;
-  entities: Array<'orders' | 'accounts' | 'candidates' | 'tasks' | 'people' | 'branch' | 'wall'>;
+  entities: Array<'orders' | 'accounts' | 'candidates' | 'tasks' | 'people' | 'branch' | 'wall' | 'whiteboard'>;
   at: string;
 }
 
@@ -255,6 +256,12 @@ export interface WallOrder {
 }
 
 export interface WallFeed {
+  /** 'whiteboard' during the branch's live huddle window (scheduled takeover); else 'board'. */
+  mode: WallMode;
+  /** Present only when mode = 'whiteboard'. Image mediaUrl values point at /api/wall/media/<id>. */
+  whiteboard?: WhiteboardView;
+  /** ISO time of the next board<->whiteboard switch today (window start or end), so displays refetch exactly then. Optional. */
+  nextModeChangeAt?: string | null;
   branch: { name: string; timeZone: string };
   generatedAt: string;
   today: string;

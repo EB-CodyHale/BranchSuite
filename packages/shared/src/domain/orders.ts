@@ -131,11 +131,11 @@ function isStartingSoon(opening: Opening, today: string): boolean {
 
 /**
  * Metrics over ACTIVE orders only. `today` may be a single key or per-branch map.
- * Age for `aging` is counted from the UTC calendar date of createdAt (no time zone is available here);
- * use orderAgeDays for an exact branch-local age. Orders whose branch has no `today` entry are not
- * counted toward startingSoon or aging.
+ * `timeZones` (a single zone or a per-branch map) sets the day space for order age, so `aging` matches
+ * the "open Nd" shown on each card (orderAgeOn). A branch missing from the map falls back to UTC
+ * calendar dates. Orders whose branch has no `today` entry are not counted toward startingSoon or aging.
  */
-export function boardMetrics(orders: Order[], today: Record<string, string> | string): BoardMetrics {
+export function boardMetrics(orders: Order[], today: Record<string, string> | string, timeZones?: Record<string, string> | string): BoardMetrics {
   const m: BoardMetrics = { orders: 0, openings: 0, toFill: 0, tentative: 0, startingSoon: 0, aging: 0 };
   for (const order of orders) {
     if (order.status !== 'active') continue;
@@ -147,14 +147,20 @@ export function boardMetrics(orders: Order[], today: Record<string, string> | st
     m.tentative += counts.tentative;
     if (day === undefined) continue;
     for (const o of order.openings) if (isStartingSoon(o, day)) m.startingSoon += 1;
-    if (counts.toFill > 0 && daysBetween(dayKeyOf(order.createdAt, 'UTC'), day) >= LIMITS.agingOrderDays) m.aging += 1;
+    const zone = (typeof timeZones === 'string' ? timeZones : timeZones?.[order.branchId]) ?? 'UTC';
+    if (counts.toFill > 0 && orderAgeOn(order, zone, day) >= LIMITS.agingOrderDays) m.aging += 1;
   }
   return m;
 }
 
+/** Whole days from createdAt (as a day key in `timeZone`) to the branch-local `today` key (never negative). */
+export function orderAgeOn(order: Pick<Order, 'createdAt'>, timeZone: string, today: string): number {
+  return Math.max(0, daysBetween(dayKeyOf(order.createdAt, timeZone), today));
+}
+
 /** Whole days since createdAt in the order's branch day space (never negative). */
 export function orderAgeDays(order: Pick<Order, 'createdAt'>, timeZone: string, now: Date = new Date()): number {
-  return Math.max(0, daysBetween(dayKeyOf(order.createdAt, timeZone), todayKey(timeZone, now)));
+  return orderAgeOn(order, timeZone, todayKey(timeZone, now));
 }
 
 /** Blank line. */

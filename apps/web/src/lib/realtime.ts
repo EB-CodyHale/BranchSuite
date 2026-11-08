@@ -9,8 +9,7 @@ import { paths, type RealtimeMessage, type RealtimeNegotiateResponse } from '@br
 import { useQueryClient, type InvalidateQueryFilters, type QueryClient } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
 import { api } from './api.js';
-import { DISPLAY_TOKEN_HEADER } from './queries.js';
-import { boardKeyIncludes, keys } from './queryKeys.js';
+import { boardKeyIncludes, DISPLAY_TOKEN_HEADER, keys } from './queryKeys.js';
 
 export type ConnectionStatus = 'live' | 'polling' | 'offline';
 
@@ -18,7 +17,7 @@ export const WEBPUBSUB_SUBPROTOCOL = 'json.webpubsub.azure.v1';
 const MAX_BACKOFF_MS = 30_000;
 const STAFF_POLL_SECONDS = 30;
 
-const ENTITIES = new Set<RealtimeMessage['entities'][number]>(['orders', 'accounts', 'candidates', 'tasks', 'people', 'branch', 'wall']);
+const ENTITIES = new Set<RealtimeMessage['entities'][number]>(['orders', 'accounts', 'candidates', 'tasks', 'people', 'branch', 'wall', 'whiteboard']);
 
 /** Extract a RealtimeMessage from a raw Web PubSub frame; null for system frames or anything malformed. */
 export function parseRealtimeFrame(raw: unknown): RealtimeMessage | null {
@@ -50,14 +49,16 @@ export function invalidationsFor(msg: RealtimeMessage): InvalidateQueryFilters[]
   const scope = msg.scopeId;
   const board: InvalidateQueryFilters = { predicate: (q) => boardKeyIncludes(q.queryKey, scope) };
   const wall: InvalidateQueryFilters = { queryKey: [keys.wallRoot()[0], scope] };
+  // Whiteboard views resolve priority orders and people, so those changes make them stale too.
+  const whiteboard: InvalidateQueryFilters = { queryKey: keys.whiteboardRoot(scope) };
   const out: InvalidateQueryFilters[] = [];
   for (const entity of new Set(msg.entities)) {
     switch (entity) {
       case 'orders':
-        out.push(board, { queryKey: keys.ordersRoot(scope) }, wall);
+        out.push(board, { queryKey: keys.ordersRoot(scope) }, wall, whiteboard);
         break;
       case 'accounts':
-        out.push(board, { queryKey: keys.accounts(scope) }, wall);
+        out.push(board, { queryKey: keys.accounts(scope) }, wall, whiteboard);
         break;
       case 'candidates':
         out.push({ queryKey: keys.candidatesRoot(scope) });
@@ -66,13 +67,16 @@ export function invalidationsFor(msg: RealtimeMessage): InvalidateQueryFilters[]
         out.push({ queryKey: keys.tasksRoot() }, { queryKey: keys.filtered(scope) }, { queryKey: ['taskMessages', scope] });
         break;
       case 'people':
-        out.push({ queryKey: keys.usersRoot() }, board, { queryKey: keys.me(), exact: true });
+        out.push({ queryKey: keys.usersRoot() }, board, { queryKey: keys.me(), exact: true }, whiteboard);
         break;
       case 'branch':
         out.push({ queryKey: keys.branches() }, { queryKey: keys.me(), exact: true }, wall);
         break;
       case 'wall':
         out.push(wall);
+        break;
+      case 'whiteboard':
+        out.push(whiteboard, wall);
         break;
     }
   }
@@ -81,7 +85,7 @@ export function invalidationsFor(msg: RealtimeMessage): InvalidateQueryFilters[]
 
 /** Refetch every on-screen view that realtime would otherwise keep fresh. */
 function refreshLiveViews(qc: QueryClient): void {
-  for (const root of [keys.boardRoot(), keys.tasksRoot(), ['candidates'], keys.wallRoot(), ['filtered'], ['orders']]) {
+  for (const root of [keys.boardRoot(), keys.tasksRoot(), ['candidates'], keys.wallRoot(), ['filtered'], ['orders'], ['whiteboard']]) {
     void qc.invalidateQueries({ queryKey: root });
   }
 }

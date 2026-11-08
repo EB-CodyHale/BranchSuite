@@ -115,7 +115,7 @@ Further rules:
 
 - **Device identity, not a person.**
   1. A TV opens `/wall`. It calls `POST /api/wall/pair/start` and shows a 6-character code (`K7Q-29M`).
-  2. A manager types the code in Setup → Displays → Pair display.
+  2. A manager types the code in Setup → Displays → Pair a display.
   3. The server creates a `display` document holding only `sha256(token)`, and hands the token to the polling device once.
   4. The device stores the token in localStorage and sends it as `x-display-token`.
   5. A manager can revoke the display at any time. Revocation takes effect on the device's next request.

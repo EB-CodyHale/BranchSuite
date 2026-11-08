@@ -254,9 +254,9 @@ Then create the mailbox record in BranchSuite (step 10). To remove access, use `
 
 **Who:** the bootstrap admin, in the BranchSuite web app.
 
-1. **Setup → Branches → Add branch.** Enter the name, branch code and time zone (default `America/Chicago`). Business days and "today" use this time zone.
+1. **Setup → Branches → New branch.** Enter the name, branch code and time zone (default `America/Chicago`). Business days and "today" use this time zone.
 2. **Setup → People.** Add the branch manager and recruiters, with their branch, role, initials and marker color. Their sign-in email must match their Entra account. Add each person to `BranchSuite-Users` as well.
-3. **Setup → Accounts.** Add client accounts, or use **Import**. Each account gets a wall code, color and glyph automatically.
+3. **Setup → Accounts.** Add client accounts (**New account**), or admins can bulk-load them with **Setup → Import accounts**. Each account gets a wall code, color and glyph automatically.
 4. **Setup → Mailboxes.** Bind the branch shared mailbox from step 9 to the branch. Bind a mailbox only when its mapping to one branch is unambiguous.
 5. **Setup → Wall settings.** Check the defaults: pay hidden, location hidden, candidate symbols only. Change them only on purpose.
 
@@ -268,12 +268,12 @@ Check: the manager signs in, sees the branch board, and can create an order.
 
 1. On the lobby screen, open `https://<swa-host>/wall` in a full-screen (kiosk) browser. Set the browser to open this URL on start, so the wall recovers after a power cycle.
 2. The screen shows a pairing code such as `K7Q-29M`. The code expires after 10 minutes.
-3. In BranchSuite, go to **Setup → Displays → Pair display**, choose the branch and type the code.
+3. In BranchSuite, open **Setup → Displays**, pick the branch in the Setup header, then choose **Pair a display** and type the code.
 4. The screen loads the wall feed within a few seconds.
 
 Check: the wall shows wall codes and symbols, not client names, pay or candidate initials. **Board → Wall preview** shows the same feed.
 
-To retire or replace a screen, use **Setup → Displays → Revoke**. The screen stops on its next request.
+To retire or replace a screen, use **Setup → Displays → Revoke**. With realtime on, the screen drops back to pairing within seconds; without it, within about a minute.
 
 ## 12. Set up the GitHub deploy pipeline
 

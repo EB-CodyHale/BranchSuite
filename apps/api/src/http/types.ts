@@ -15,14 +15,17 @@ export interface ApiRequest {
   query: URLSearchParams;
   /** Lowercase header names. */
   headers: Record<string, string>;
-  /** Parsed JSON body (undefined when empty). */
+  /** Parsed JSON body (undefined when empty or binary). */
   body: unknown;
+  /** Raw request bytes, present only for binary (image/*) uploads; see isBinaryContentType. */
+  rawBody?: Buffer;
   /** Best-effort client IP (rate limiting only, never authorization). */
   ip: string;
 }
 
 export interface ApiResponse {
   status: number;
+  /** JSON-serialized, except a Buffer, which is sent as-is (set content-type in headers). */
   body?: unknown;
   headers?: Record<string, string>;
 }
@@ -35,4 +38,9 @@ export function ok(body: unknown, status = 200): ApiResponse {
 
 export function created(body: unknown): ApiResponse {
   return { status: 201, body };
+}
+
+/** Binary response (images). Content-type is required so nothing is ever sniffed. */
+export function bytes(body: Buffer, contentType: string, headers: Record<string, string> = {}): ApiResponse {
+  return { status: 200, body, headers: { 'content-type': contentType, 'content-length': String(body.length), ...headers } };
 }

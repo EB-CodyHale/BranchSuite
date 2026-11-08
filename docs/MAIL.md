@@ -32,9 +32,9 @@ Code: `apps/api/src/mail/`.
 6. One run processes at most 400 messages. When it reaches that limit, it saves the current `nextLink`, and the next run continues from there.
 7. It sets the mailbox `status` (`ok`, `no_access` or `error`), `lastSyncAt` and `lastError`.
 
-**No history backfill.** The first sync of a folder asks Graph only for mail received in the last hour. Intake then processes only messages received after the mailbox was enabled (its last admin change), or after the start of that hour if that is later. Older mail is never imported.
+**No history backfill.** The first sync of a folder asks Graph only for mail received in the last hour. Intake then processes only messages received after the mailbox was last switched on (`enabledAt`; other admin edits do not move it), or after the start of that hour if that is later. Older mail is never imported.
 
-An admin can press **Sync now** (Setup → Mailboxes). That runs one mailbox at once, unless the timer holds the lease. In that case the next timer run picks it up within 2 minutes.
+An admin can press **Sync now** (Setup → Mailboxes). That syncs one mailbox inside the request, up to 25 messages, unless the timer holds the lease. Any backlog, or a run blocked by the lease, is picked up by the next timer run within 2 minutes.
 
 ### The per-message pipeline
 
@@ -79,7 +79,7 @@ You need an Exchange administrator for steps 1–2 and a BranchSuite admin for s
 3. **BranchSuite.** In Setup → Mailboxes, add the mailbox address and choose the branch or branches it serves. The status starts as **pending** and changes to **ok** after the first sync.
 4. **Internal domains.** Check `TENANT_DOMAINS` (deployment setting). Add any other staff domains per branch in the branch setting `internalDomains` (Setup → Branches).
 5. **Accounts.** Add client domains, contacts and aliases so routing can match mail to accounts. Create the reserved Internal account per branch.
-6. **Personal mailboxes.** A user opts in from their profile. An admin approves it and an Exchange administrator adds the user's mailbox to the same group.
+6. **Personal mailboxes.** A user opts in from **Inbox → Personal → Connect my mailbox** (shown when the personal mail feature is on). An admin approves it and an Exchange administrator adds the user's mailbox to the same group.
 
 Exchange RBAC changes can take 30 minutes to 2 hours to reach Graph.
 
@@ -106,11 +106,11 @@ The script loads the fictional seed in memory and prints what each sample messag
 
 ## 3. What staff see
 
-- **Day board / Inbox.** Email tasks show the sender, subject, received time, message count, priority, category, routing status and assignee. A task opens the stored messages (new text only) and a link to the message in Outlook.
-- **Draft orders.** A task that made an order links to it. Managers review the draft on the board and publish it.
+- **Inbox.** Email tasks show the sender, subject, received time, message count, priority, category, routing status and assignee. A task opens the stored messages (new text only) and a link to the message in Outlook.
+- **Draft orders.** A task that made an order shows **Draft order created** (or **Order on board**); it opens the board focused on that order. Managers review drafts under **Needs review** on the board and publish them.
 - **Blocked requests.** A task with a staffing request but no order shows the reason. A manager can create the order from the task after choosing the account.
 - **Reply-closed tasks.** These show the reply time, the replying address, a short excerpt and the reason.
-- **Filtered mail.** Managers see filtered mail for their branches for 30 days, with the reason (prefilter or model), and can promote a message to a task.
+- **Filtered mail.** In **Setup → Filtered mail**, managers see filtered mail for their branches for 30 days, with the reason (prefilter or model), and can **Promote to task**.
 - **Mailbox status.** Admins see status, last sync time and last error in Setup → Mailboxes.
 
 ## 4. Troubleshooting

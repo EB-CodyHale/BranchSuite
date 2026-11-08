@@ -242,7 +242,7 @@ describe('mail ingest: scopes', () => {
     const app = await createMailTestApp();
     await app.repo.createMailbox({
       id: 'mbx_shared', address: 'shared.orders@branchsuite.example.com', kind: 'branch', branchIds: [B1, B2], userId: null, brand: '',
-      enabled: true, status: 'ok', lastSyncAt: null, lastError: null, createdAt: '2026-03-01T00:00:00.000Z', updatedAt: '2026-03-01T00:00:00.000Z', createdBy: null, updatedBy: null,
+      enabled: true, enabledAt: '2026-03-01T00:00:00.000Z', status: 'ok', lastSyncAt: null, lastError: null, createdAt: '2026-03-01T00:00:00.000Z', updatedAt: '2026-03-01T00:00:00.000Z', createdBy: null, updatedBy: null,
     });
     const kim = await app.ingest({ mailboxId: 'mbx_shared', message: { id: 'g-m1', from: KIM, subject: 'Sanitation', body: 'We need 2 sanitation workers tonight.' } });
     expect(kim.scopeId).toBe(B2);

@@ -8,8 +8,8 @@ import { loadConfig } from '../config.js';
 import { createAppContext } from '../context.js';
 import { MemoryRepo } from '../data/memory.js';
 import { errorBody } from '../http/errors.js';
-import { MAX_BODY_BYTES } from '../http/request.js';
-import { SECURITY_HEADERS } from '../http/router.js';
+import { bodyLimitFor, isBinaryContentType } from '../http/request.js';
+import { SECURITY_HEADERS, serializeBody } from '../http/router.js';
 import { createRouter } from '../routes/index.js';
 import { DEV_DISPLAY_TOKEN, seedDevData } from './seed.js';
 
@@ -36,27 +36,38 @@ if (ctx.repo instanceof MemoryRepo && ctx.repo.memory.isEmpty()) {
   ctx.log.info('Seeded fictional dev data', { devDisplayToken: DEV_DISPLAY_TOKEN });
 }
 
-function readBody(req: IncomingMessage): Promise<string | null> {
+/** Reads at most `limit` bytes; resolves null (and stops reading) as soon as the body is larger. */
+function readBody(req: IncomingMessage, limit: number): Promise<Buffer | null> {
   return new Promise((resolve, reject) => {
+    if (Number(req.headers['content-length'] ?? '0') > limit) {
+      resolve(null);
+      return;
+    }
     const chunks: Buffer[] = [];
     let size = 0;
+    let done = false;
     req.on('data', (chunk: Buffer) => {
+      if (done) return;
       size += chunk.length;
-      if (size > MAX_BODY_BYTES) {
+      if (size > limit) {
+        done = true;
+        chunks.length = 0;
+        req.pause();
         resolve(null);
-        req.destroy();
         return;
       }
       chunks.push(chunk);
     });
-    req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
+    req.on('end', () => {
+      if (!done) resolve(Buffer.concat(chunks, size));
+    });
     req.on('error', reject);
   });
 }
 
 function send(res: ServerResponse, status: number, headers: Record<string, string>, body: unknown): void {
   res.writeHead(status, headers);
-  res.end(body === undefined ? undefined : JSON.stringify(body));
+  res.end(serializeBody(body));
 }
 
 const server = createServer(async (req, res) => {
@@ -65,16 +76,20 @@ const server = createServer(async (req, res) => {
     send(res, 404, { ...SECURITY_HEADERS, 'content-type': 'application/json' }, errorBody('not_found', 'The API lives under /api.'));
     return;
   }
-  const bodyText = await readBody(req);
-  if (bodyText === null) {
-    send(res, 413, { ...SECURITY_HEADERS, 'content-type': 'application/json' }, errorBody('bad_request', 'Request body is too large.'));
+  const contentType = req.headers['content-type'];
+  const raw = await readBody(req, bodyLimitFor(contentType));
+  if (raw === null) {
+    // Close the connection: the rest of the oversized upload is never read.
+    res.once('finish', () => req.destroy());
+    send(res, 413, { ...SECURITY_HEADERS, 'content-type': 'application/json', connection: 'close' }, errorBody('bad_request', 'Request body is too large.'));
     return;
   }
+  const body = isBinaryContentType(contentType) ? { bodyText: '', bodyBytes: raw } : { bodyText: raw.toString('utf8') };
   const headers = Object.entries(req.headers).flatMap(([k, v]): Array<[string, string]> =>
     v === undefined ? [] : [[k, Array.isArray(v) ? v.join(', ') : v]],
   );
   const result = await router.handleRaw(
-    { method: req.method ?? 'GET', url, headers, bodyText, ...(req.socket.remoteAddress ? { remoteAddress: req.socket.remoteAddress } : {}) },
+    { method: req.method ?? 'GET', url, headers, ...body, ...(req.socket.remoteAddress ? { remoteAddress: req.socket.remoteAddress } : {}) },
     ctx,
   );
   send(res, result.status, result.headers ?? {}, result.body);

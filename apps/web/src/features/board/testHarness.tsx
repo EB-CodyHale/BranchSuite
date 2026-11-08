@@ -101,7 +101,7 @@ export function mockApi(board: BoardResponse | (() => Response), handlers: Recor
   return calls;
 }
 
-export function renderBoardPage(opts: { me?: MeResponse; board?: BoardResponse | (() => Response); handlers?: Record<string, Handler> } = {}) {
+export function renderBoardPage(opts: { me?: MeResponse; board?: BoardResponse | (() => Response); handlers?: Record<string, Handler>; path?: string } = {}) {
   const me = opts.me ?? meResponse();
   const calls = mockApi(opts.board ?? boardOf([]), opts.handlers);
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
@@ -109,7 +109,7 @@ export function renderBoardPage(opts: { me?: MeResponse; board?: BoardResponse |
   const utils = render(
     <QueryClientProvider client={client}>
       <ToastProvider>
-        <MemoryRouter>
+        <MemoryRouter initialEntries={[opts.path ?? '/']}>
           <MeProvider me={me}>
             <BranchScopeProvider>
               <BoardPage />

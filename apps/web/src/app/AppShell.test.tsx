@@ -113,9 +113,12 @@ describe('app shell', () => {
   });
 
   it('renders /wall without a user session or a call to /api/me', async () => {
+    localStorage.removeItem('bs.wall.token');
     const { calls } = setup('/wall', {});
-    expect(await screen.findByRole('heading', { name: 'BranchSuite wall' })).toBeTruthy();
+    // An unpaired display lands on the pairing screen (features/wall/PairingScreen).
+    expect(await screen.findByRole('heading', { name: 'Pair this display' })).toBeTruthy();
     expect(screen.queryByRole('navigation')).toBeNull();
+    await waitFor(() => expect(calls.some((c) => c.url === '/api/wall/pair/start')).toBe(true));
     expect(calls.some((c) => c.url === '/api/me')).toBe(false);
   });
 });

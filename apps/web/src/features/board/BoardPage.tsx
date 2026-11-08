@@ -1,6 +1,7 @@
 import { boardMetrics, sortOrders, DEFAULT_TIME_ZONE, type AccountLite, type Branch, type Order, type PersonLite } from '@branchsuite/shared';
-import { ClipboardList, Plus, SearchX } from 'lucide-react';
+import { ClipboardList, Crosshair, Plus, SearchX } from 'lucide-react';
 import { useCallback, useDeferredValue, useMemo, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { ALL_BRANCHES, useBranchScope } from '../../app/BranchScope.js';
 import { useMeContext } from '../../app/MeContext.js';
 import { useDocumentTitle } from '../../app/useDocumentTitle.js';
@@ -64,6 +65,23 @@ export function BoardPage() {
   const deferredSearch = useDeferredValue(search);
   const [quick, setQuick] = useState<QuickFilter | null>(null);
 
+  // ---- deep-link focus: /?order=<id> (inbox "Draft order created") and /?account=<id> (pipeline) ----
+  const [params, setParams] = useSearchParams();
+  const focusOrderId = params.get('order');
+  const focusAccountId = focusOrderId ? null : params.get('account');
+  const clearFocus = useCallback(
+    () =>
+      setParams(
+        (p) => {
+          p.delete('order');
+          p.delete('account');
+          return p;
+        },
+        { replace: true },
+      ),
+    [setParams],
+  );
+
   // ---- dialogs ----
   const [dialog, setDialog] = useState<DialogState | null>(null);
   const [closedOpen, setClosedOpen] = useState(false);
@@ -105,8 +123,14 @@ export function BoardPage() {
   const lookups = useMemo(() => buildLookups(accounts, people), [accounts, people]);
   const orders = useMemo(() => allOrders.filter((o) => branchIds.includes(o.branchId)), [allOrders, branchIds]);
   const owners = useMemo(() => ownersByOrder(orders, lookups), [orders, lookups]);
-  const metrics = useMemo(() => (data ? boardMetrics(orders, today) : null), [data, orders, today]);
-  const drafts = useMemo(() => reviewableDrafts(orders, canManage), [orders, canManage]);
+  const timeZones = useMemo(() => {
+    const zones: Record<string, string> = {};
+    for (const [id, b] of branchesById) zones[id] = b.timeZone;
+    return zones;
+  }, [branchesById]);
+  const metrics = useMemo(() => (data ? boardMetrics(orders, today, timeZones) : null), [data, orders, today, timeZones]);
+  const allDrafts = useMemo(() => reviewableDrafts(orders, canManage), [orders, canManage]);
+  const drafts = useMemo(() => (focusOrderId ? allDrafts.filter((d) => d.id === focusOrderId) : allDrafts), [allDrafts, focusOrderId]);
   const multiBranch = branchIds.length > 1;
   const scopeBranches = useMemo(() => branchIds.map((id) => branchesById.get(id)).filter((b): b is Branch => b !== undefined), [branchIds, branchesById]);
   const ownerChoices = useMemo(
@@ -114,10 +138,17 @@ export function BoardPage() {
     [people, branchIds],
   );
 
+  const focused = focusOrderId !== null || focusAccountId !== null;
   const visible = useMemo(() => {
-    const filtered = filterOrders(orders, { toolbar, search: deferredSearch, quick, today, lookups, owners, scopeBranchIds: branchIds });
+    // A deep link shows exactly what it points at, regardless of the saved toolbar filters.
+    const onBoard = (o: Order) => o.status === 'active' || o.status === 'paused';
+    const filtered = focusOrderId
+      ? orders.filter((o) => o.id === focusOrderId && onBoard(o))
+      : focusAccountId
+        ? orders.filter((o) => o.accountId === focusAccountId && onBoard(o))
+        : filterOrders(orders, { toolbar, search: deferredSearch, quick, today, lookups, owners, scopeBranchIds: branchIds, timeZones });
     return sortOrders(filtered, toolbar.sort, { today, accountsById: lookups.accountsById });
-  }, [orders, toolbar, deferredSearch, quick, today, lookups, owners, branchIds]);
+  }, [orders, toolbar, deferredSearch, quick, today, lookups, owners, branchIds, timeZones, focusOrderId, focusAccountId]);
 
   const boardOrderCount = useMemo(() => orders.filter((o) => o.status === 'active' || o.status === 'paused').length, [orders]);
   const pausedHidden = useMemo(() => !toolbar.showPaused && orders.some((o) => o.status === 'paused'), [orders, toolbar.showPaused]);
@@ -183,6 +214,17 @@ export function BoardPage() {
             <>
               <BoardToolbar state={toolbar} onChange={updateToolbar} search={search} onSearch={setSearch} people={ownerChoices} branches={scopeBranches} />
 
+              {focused ? (
+                <FocusBanner
+                  orderId={focusOrderId}
+                  accountId={focusAccountId}
+                  orders={orders}
+                  shown={visible.length}
+                  isDraft={drafts.length > 0}
+                  onClear={clearFocus}
+                />
+              ) : null}
+
               <DraftsTray drafts={drafts} publishingId={publish.isPending ? (publish.variables?.orderId ?? null) : null} />
 
               <p className="sr-only" role="status" aria-live="polite">
@@ -202,7 +244,7 @@ export function BoardPage() {
                     ) : undefined
                   }
                 />
-              ) : visible.length === 0 ? (
+              ) : visible.length === 0 && focused ? null : visible.length === 0 ? (
                 <EmptyState
                   icon={<SearchX />}
                   title="Nothing matches these filters"
@@ -231,6 +273,47 @@ export function BoardPage() {
 }
 
 // ---------------------------------------------------------------------------------------------
+
+/** Explains a deep-linked view and offers the way back to the whole board. */
+function FocusBanner({
+  orderId,
+  accountId,
+  orders,
+  shown,
+  isDraft,
+  onClear,
+}: {
+  orderId: string | null;
+  accountId: string | null;
+  orders: readonly Order[];
+  shown: number;
+  isDraft: boolean;
+  onClear: () => void;
+}) {
+  const env = useBoardEnv();
+  let text: string;
+  if (orderId) {
+    const order = orders.find((o) => o.id === orderId);
+    const name = order ? (env.accountsById.get(order.accountId)?.name ?? 'Unknown account') : null;
+    if (order && shown > 0) text = `Showing one order: ${name} · ${order.role}.`;
+    else if (order && isDraft) text = `${name} · ${order.role} is a draft from email. Review it under Needs review, then publish it to the board.`;
+    else text = 'That order is not on the board in this branch scope. It may be closed, still a draft for a manager to review, or in another branch.';
+  } else {
+    const account = accountId ? env.accountsById.get(accountId) : undefined;
+    if (!account) text = 'That account is not in the current branch scope. Switch the branch scope to see its orders.';
+    else if (shown === 0) text = `${account.name} has no open orders on the board right now.`;
+    else text = `Showing ${account.name} only: ${shown} ${shown === 1 ? 'order' : 'orders'}.`;
+  }
+  return (
+    <div role="status" className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg border border-accent/40 bg-accent-soft px-3 py-2 text-sm">
+      <Crosshair aria-hidden="true" className="size-4 shrink-0 text-accent" />
+      <p className="min-w-0 flex-1">{text}</p>
+      <Button size="sm" onClick={onClear}>
+        Show the whole board
+      </Button>
+    </div>
+  );
+}
 
 function BoardGrid({ orders, owners, grouped, consecutive }: { orders: Order[]; owners: Map<string, string | null>; grouped: boolean; consecutive: boolean }) {
   const env = useBoardEnv();

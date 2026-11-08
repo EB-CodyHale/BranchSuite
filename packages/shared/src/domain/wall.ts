@@ -141,6 +141,7 @@ export function toWallFeed(input: WallFeedInput): WallFeed {
   });
 
   return {
+    mode: 'board',
     branch: { name: branch.name, timeZone: branch.timeZone },
     generatedAt: now.toISOString(),
     today,

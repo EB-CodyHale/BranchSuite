@@ -15,6 +15,8 @@ export interface Config {
   aiMode: 'azure' | 'mock';
   azureOpenAiEndpoint: string | null;
   azureOpenAiDeployment: string | null;
+  /** Azure OpenAI data-plane API version; null uses the classifier default. */
+  azureOpenAiApiVersion: string | null;
   webPubSubEndpoint: string | null;
   webPubSubHub: string;
   /** Exactly one source for the wall HMAC secret. */
@@ -24,6 +26,11 @@ export interface Config {
   tenantDomains: string[];
   features: { pipeline: boolean; personalMail: boolean };
   mailAccessHelp: string;
+  /** Whiteboard images: private Blob container reached with managed identity. null = no blob store. */
+  mediaBlobEndpoint: string | null;
+  mediaContainer: string;
+  /** DEV ONLY (AUTH_MODE=dev): treat today's whiteboard as live unless it is set to 'off'. */
+  devWhiteboardLive: boolean;
 }
 
 export const WALL_SECRET_NAME = 'wall-hmac-secret';
@@ -68,6 +75,7 @@ const zEnv = z.object({
   AI_MODE: z.enum(['azure', 'mock']).default('azure'),
   AZURE_OPENAI_ENDPOINT: optionalUrl,
   AZURE_OPENAI_DEPLOYMENT: optionalText,
+  AZURE_OPENAI_API_VERSION: optionalText,
   WEB_PUBSUB_ENDPOINT: optionalUrl,
   WEB_PUBSUB_HUB: z.string().trim().regex(/^[A-Za-z][A-Za-z0-9_]{0,127}$/).default('branchsuite'),
   WALL_HMAC_SECRET: optionalText,
@@ -77,6 +85,13 @@ const zEnv = z.object({
   FEATURE_PIPELINE: bool(true),
   FEATURE_PERSONAL_MAIL: bool(true),
   MAIL_ACCESS_HELP: optionalText,
+  MEDIA_BLOB_ENDPOINT: optionalUrl,
+  MEDIA_CONTAINER: z
+    .string()
+    .trim()
+    .regex(/^(?!.*--)[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$/, 'Not a valid blob container name')
+    .default('whiteboard-media'),
+  DEV_WHITEBOARD_LIVE: bool(false),
   APP_VERSION: optionalText,
   BUNDLED_APP_VERSION: optionalText,
   WEBSITE_SITE_NAME: optionalText,
@@ -118,6 +133,12 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
   if (e.WALL_HMAC_SECRET && e.WALL_HMAC_SECRET.length < 32) {
     throw new ConfigError('WALL_HMAC_SECRET must be at least 32 characters.');
   }
+  if (e.MEDIA_BLOB_ENDPOINT && !/^https:\/\/[^/]+$/.test(e.MEDIA_BLOB_ENDPOINT.replace(/\/$/, ''))) {
+    throw new ConfigError('MEDIA_BLOB_ENDPOINT must be an https account endpoint such as https://<account>.blob.core.windows.net.');
+  }
+  if (e.DEV_WHITEBOARD_LIVE && (e.AUTH_MODE !== 'dev' || isRunningInAzure(env))) {
+    throw new ConfigError('DEV_WHITEBOARD_LIVE is a local development switch and requires AUTH_MODE=dev outside Azure.');
+  }
   let wallSecret: Config['wallSecret'];
   if (e.WALL_HMAC_SECRET) wallSecret = { kind: 'env', value: e.WALL_HMAC_SECRET };
   else if (e.KEY_VAULT_URI) wallSecret = { kind: 'keyvault', vaultUri: e.KEY_VAULT_URI, secretName: WALL_SECRET_NAME };
@@ -133,6 +154,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     aiMode: e.AI_MODE,
     azureOpenAiEndpoint: e.AZURE_OPENAI_ENDPOINT,
     azureOpenAiDeployment: e.AZURE_OPENAI_DEPLOYMENT,
+    azureOpenAiApiVersion: e.AZURE_OPENAI_API_VERSION,
     webPubSubEndpoint: e.WEB_PUBSUB_ENDPOINT,
     webPubSubHub: e.WEB_PUBSUB_HUB,
     wallSecret,
@@ -140,5 +162,8 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     tenantDomains: e.TENANT_DOMAINS,
     features: { pipeline: e.FEATURE_PIPELINE, personalMail: e.FEATURE_PERSONAL_MAIL },
     mailAccessHelp: e.MAIL_ACCESS_HELP ?? DEFAULT_MAIL_ACCESS_HELP,
+    mediaBlobEndpoint: e.MEDIA_BLOB_ENDPOINT ? e.MEDIA_BLOB_ENDPOINT.replace(/\/$/, '') : null,
+    mediaContainer: e.MEDIA_CONTAINER,
+    devWhiteboardLive: e.DEV_WHITEBOARD_LIVE,
   };
 }

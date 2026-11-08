@@ -199,8 +199,8 @@ export function registerCandidateRoutes(router: Router): void {
         const candidate: Candidate = { ...released.candidate, status: 'archived', updatedAt: nowIso, updatedBy: caller.user.id };
         return { candidate, orders: released.orders, result: { candidate, orders: released.orders } };
       });
-      await finish(ctx, caller, branch.id, result, 'archive', `Archived ${label(result.candidate)}`);
-      return ok(result.candidate);
+      // Full result: archiving releases the linked line, so clients need the updated order too.
+      return ok(await finish(ctx, caller, branch.id, result, 'archive', `Archived ${label(result.candidate)}`));
     }),
   );
 }

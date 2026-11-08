@@ -561,6 +561,11 @@ export const zMailbox = zAudited.extend({
   userId: zId.nullable(),
   brand: z.string().trim().max(60).default(''),
   enabled: z.boolean(),
+  /**
+   * When the mailbox was last switched on (server-written). Mail sync never backfills before this.
+   * Null while disabled, and on records written before the field existed (sync then uses updatedAt).
+   */
+  enabledAt: zIso.nullable().default(null),
   /** Status of Graph access, last sync and error (server-written). */
   status: z.enum(['pending', 'ok', 'no_access', 'error', 'disabled']),
   lastSyncAt: zIso.nullable(),

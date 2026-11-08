@@ -1,0 +1,40 @@
+/*
+ * Whiteboard-only styles that utilities cannot express. Colors come only from theme tokens.
+ */
+
+/* Wall takeover: the outgoing mode fades out above the incoming one (see WallDisplayPage). */
+@keyframes wb-mode-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes wb-mode-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+.wb-mode-in {
+  animation: wb-mode-in 700ms ease both;
+}
+.wb-mode-out {
+  animation: wb-mode-out 700ms ease both;
+}
+
+/* Editor: the block being dragged, and the drop target. */
+.wb-dragging {
+  opacity: 0.45;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wb-mode-in,
+  .wb-mode-out {
+    animation: none;
+  }
+}

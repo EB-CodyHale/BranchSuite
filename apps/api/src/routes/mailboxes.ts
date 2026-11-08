@@ -51,6 +51,7 @@ export function registerMailboxRoutes(router: Router): void {
         userId: null,
         brand: input.brand ?? '',
         enabled: input.enabled ?? true,
+        enabledAt: input.enabled === false ? null : nowIso,
         status: input.enabled === false ? 'disabled' : 'pending',
         lastSyncAt: null,
         lastError: null,
@@ -74,7 +75,10 @@ export function registerMailboxRoutes(router: Router): void {
       const mailbox = await ctx.repo.updateMailbox(req.params.id!, (m) => {
         if (m.kind === 'personal' && input.branchIds) throw badRequest('Personal mailboxes do not serve branches.');
         const status = input.enabled === undefined ? m.status : input.enabled ? (m.enabled ? m.status : 'pending') : 'disabled';
-        return { ...m, ...input, status, updatedAt: ctx.now().toISOString(), updatedBy: caller.user.id };
+        const nowIso = ctx.now().toISOString();
+        // enabledAt moves only on a false -> true switch, so other edits never reopen a backfill window.
+        const enabledAt = input.enabled === undefined ? m.enabledAt : input.enabled ? (m.enabled ? m.enabledAt : nowIso) : null;
+        return { ...m, ...input, status, enabledAt, updatedAt: nowIso, updatedBy: caller.user.id };
       });
       await audit(ctx, caller.user.id, { branchId: auditScope(mailbox), entity: 'mailbox', entityId: mailbox.id, action: 'update', summary: `Edited mailbox ${mailbox.address}: ${Object.keys(input).join(', ')}` });
       return ok(mailbox);

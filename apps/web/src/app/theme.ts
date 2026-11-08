@@ -37,6 +37,15 @@ export function markerVars(tone: Tone): Record<string, string> {
   return vars;
 }
 
+/**
+ * Props for a nested element that renders in a different theme than the page (wall previews, frames).
+ * applyTheme writes marker inks inline on <html> only, so a nested data-theme also needs its own marker
+ * variables or it would keep the page's inks. Spread onto the element: <div {...themeScope('night')}>.
+ */
+export function themeScope(theme: Theme): { 'data-theme': Theme; style: Record<string, string> } {
+  return { 'data-theme': theme, style: markerVars(toneOf(theme)) };
+}
+
 export function applyMarkerVars(el: HTMLElement, tone: Tone): void {
   for (const [name, value] of Object.entries(markerVars(tone))) el.style.setProperty(name, value);
 }
