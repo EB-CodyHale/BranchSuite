@@ -53,6 +53,14 @@ describe('pipeline board', () => {
     expect(await screen.findByRole('heading', { name: 'Ivy Kowal' })).toBeTruthy();
   });
 
+  it('shows everyone on first load when the viewer has no candidates of their own', async () => {
+    renderPipeline({
+      candidates: { br_north: [candidate({ id: 'cand_ivy', firstName: 'Ivy', lastName: 'Kowal', initials: 'IK', recruiterId: 'usr_blake' })] },
+    });
+    expect(await screen.findByRole('heading', { name: 'Ivy Kowal' })).toBeTruthy();
+    expect((screen.getByRole('combobox', { name: 'Recruiter' }) as HTMLSelectElement).value).toBe('all');
+  });
+
   it('moves a candidate through the Move to… menu', async () => {
     const jamie = candidate();
     const { calls } = renderPipeline({ candidates: { br_north: [jamie] }, handlers: { [`POST ${STAGE_URL}`]: stageResult(jamie) } });

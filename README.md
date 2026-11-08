@@ -84,3 +84,6 @@ The built SPA works under a strict CSP (`script-src 'self'; style-src 'self'`). 
 - [docs/MAIL.md](docs/MAIL.md): how mail intake works, how to set up mailboxes, troubleshooting
 - [docs/WALL.md](docs/WALL.md): wall settings, pairing and revoking displays, kiosk hardware, troubleshooting
 - [docs/WHITEBOARD.md](docs/WHITEBOARD.md): the morning huddle board, its display window and the wall takeover
+- [docs/PROGRESS.md](docs/PROGRESS.md): build status, what was verified, open decisions
+- [docs/ROADMAP.md](docs/ROADMAP.md): recommended improvements, in priority order
+- [docs/screenshots/](docs/screenshots/): the board, the coded lobby wall and the huddle takeover (fictional seed data)

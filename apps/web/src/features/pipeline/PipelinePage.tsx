@@ -153,6 +153,16 @@ function PipelineWorkspace({ branchId, board, deepId, setCandidateParam, header 
 
   const active = useCandidates(branchId, 'active');
   const activeList = active.data ?? EMPTY;
+  // "My candidates" is the default, but a manager or new recruiter with nobody of their own would land on an
+  // empty board. Once, on first load, fall back to everyone in that case. Later choices are left alone.
+  const defaultChecked = useRef(false);
+  useEffect(() => {
+    if (defaultChecked.current || !active.isSuccess) return;
+    defaultChecked.current = true;
+    if (!activeList.some((c) => c.recruiterId === viewerId)) {
+      setFilters((f) => (f.recruiter === 'mine' ? { ...f, recruiter: 'all' } : f));
+    }
+  }, [active.isSuccess, activeList, viewerId]);
   const deepMissingFromActive = deepId !== null && active.isSuccess && !activeList.some((c) => c.id === deepId);
   const archived = useCandidates(branchId, 'archived', { enabled: filters.showArchived || deepMissingFromActive });
   const archivedList = archived.data ?? EMPTY;
